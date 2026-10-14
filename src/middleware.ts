@@ -1,37 +1,73 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/env";
 
 const PROTECTED = ["/find", "/sessions", "/availability", "/profile", "/admin", "/onboarding", "/pending"];
 
+/** Names (never values) of required settings that are missing or malformed. */
+function configProblems(url: string | undefined, key: string | undefined) {
+  const problems: string[] = [];
+  if (!url) problems.push("NEXT_PUBLIC_SUPABASE_URL is not set");
+  else if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url.trim()))
+    problems.push("NEXT_PUBLIC_SUPABASE_URL should look like https://<project>.supabase.co (no quotes, no trailing path)");
+  if (!key) problems.push("NEXT_PUBLIC_SUPABASE_ANON_KEY is not set");
+  return problems;
+}
+
+function configErrorPage(problems: string[]) {
+  const body = `<!doctype html><meta charset="utf-8"><title>Site not configured</title>
+<body style="font:15px/1.55 system-ui,sans-serif;max-width:620px;margin:64px auto;padding:0 16px">
+<h1 style="font-size:22px">IITG Alumni Connect isn't configured yet</h1>
+<ul>${problems.map((p) => `<li>${p}</li>`).join("")}</ul>
+<p>Fix these in Vercel → Project → Settings → Environment Variables (for Production, Preview and Development), then
+<b>redeploy</b>: Deployments → ⋯ → Redeploy. Variables that start with NEXT_PUBLIC_ are read when the site is built, so
+adding them doesn't take effect until the next build.</p></body>`;
+  return new NextResponse(body, { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
+}
+
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request });
-
-  const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(list) {
-        list.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request });
-        list.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
-      },
-    },
-  });
-
-  // Refreshes the session cookie; also tells us whether anyone is signed in.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const path = request.nextUrl.pathname;
-  if (!user && PROTECTED.some((p) => path === p || path.startsWith(p + "/"))) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.search = "";
-    return NextResponse.redirect(url);
+  const url = supabaseUrl() || undefined;
+  const key = supabaseAnonKey() || undefined;
+  const problems = configProblems(url, key);
+  if (problems.length) {
+    console.error("Configuration problem:", problems.join("; "));
+    return configErrorPage(problems);
   }
-  return response;
+
+  let response = NextResponse.next({ request });
+  try {
+    const supabase = createServerClient(supabaseUrl(), supabaseAnonKey(), {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(list) {
+          list.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
+          list.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        },
+      },
+    });
+
+    // Refreshes the session cookie; also tells us whether anyone is signed in.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const path = request.nextUrl.pathname;
+    if (!user && PROTECTED.some((p) => path === p || path.startsWith(p + "/"))) {
+      const to = request.nextUrl.clone();
+      to.pathname = "/login";
+      to.search = "";
+      return NextResponse.redirect(to);
+    }
+    return response;
+  } catch (e) {
+    // Never take the whole site down over a session refresh; pages still check
+    // sign-in themselves.
+    console.error("Middleware error:", e);
+    return NextResponse.next({ request });
+  }
 }
 
 export const config = {

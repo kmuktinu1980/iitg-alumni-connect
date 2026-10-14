@@ -1,0 +1,115 @@
+# IITG Alumni Connect
+
+A mentoring site for IIT Guwahati. Alumni volunteer their skills and open slots on their calendar; students describe their project and the advice they want, get alumni ranked by fit, and book a slot. Both sides get an email with a calendar invite and the meeting link.
+
+**Stack:** Next.js 15 (App Router) · Supabase (Postgres, Auth, row-level security) · Vercel (hosting + daily cron) · Resend (email) · Claude API (matching).
+
+---
+
+## How it works
+
+| Who | Signs in with | Gets in |
+|---|---|---|
+| Students | Email link to their `@iitg.ac.in` address | Immediately (the domain is the proof) |
+| Alumni | Google, LinkedIn, or an email link to any address | After an organizer approves them |
+| Organizers | Any of the above, then marked admin in the database | Organizer page |
+
+- **Alumni** fill in batch, branch, role, skills, advice areas and a reusable meeting link (Zoom/Meet), then open 30/45/60-minute slots, one-off or weekly.
+- **Students** describe their project and question. Claude reads every listed alumni profile and returns up to five with a fit score and a one-line reason. If the API key is missing or the call fails, a keyword ranking is used instead.
+- **Booking** is first come, first served. The database guarantees one booking per slot, one upcoming session per student–mentor pair, and at most three upcoming sessions per student.
+- **Email:** booking confirmation with a calendar invite to both people, cancellation (removes the event), a reminder the day before, and an approval email to alumni.
+- **Privacy:** students never see alumni emails; meeting links are shown only to the student who booked; an alumnus sees a student's project and email only once that student books them.
+
+## Repository layout
+
+```
+supabase/migrations/0001_init.sql   Schema, security rules and all write logic
+supabase/tests/schema.test.mjs      27 tests run against an in-memory Postgres
+src/app/                            Pages: /, /login, /onboarding, /pending, /find,
+                                    /sessions, /availability, /profile, /admin
+src/app/actions.ts                  Server actions (each calls a database function)
+src/app/api/match/route.ts          Matching endpoint (rate-limited, logged)
+src/app/api/cron/reminders/route.ts Daily reminder job
+src/lib/matching.ts                 Claude ranking + keyword fallback
+src/lib/email.ts, src/lib/ics.ts    Emails and calendar invites
+```
+
+All writes go through `SECURITY DEFINER` database functions that check who is calling. Clients can only read, and only what row-level security allows. The service-role key is used on the server only for emails, private fields and the organizer page, each after the app has checked the user.
+
+---
+
+## Setup (about 45 minutes)
+
+### 1. Supabase
+
+1. Create a project at [supabase.com](https://supabase.com) (the free tier is enough for a pilot). Pick a region near India, such as Mumbai.
+2. Open **SQL Editor**, paste the contents of `supabase/migrations/0001_init.sql`, and run it.
+3. **Authentication → URL Configuration**
+   - Site URL: your production URL, e.g. `https://iitg-alumni-connect.vercel.app`
+   - Redirect URLs: add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`
+4. **Authentication → Sign In / Providers**
+   - **Email:** enabled. Keep "Confirm email" on.
+   - **Google:** create an OAuth client in Google Cloud Console (Web application). Authorized redirect URI: `https://YOUR-PROJECT.supabase.co/auth/v1/callback`. Paste the client ID and secret into Supabase.
+   - **LinkedIn (OIDC):** create an app at [linkedin.com/developers](https://www.linkedin.com/developers/), add the "Sign In with LinkedIn using OpenID Connect" product, set the same Supabase callback URL, and paste the client ID and secret into Supabase.
+5. **Authentication → Emails → SMTP Settings:** turn on custom SMTP with your Resend credentials (step 2). Supabase's built-in sender is rate-limited to a handful of emails per hour, which isn't enough for real sign-ins.
+6. **Project Settings → API:** copy the project URL, the `anon` key and the `service_role` key.
+
+### 2. Resend (email)
+
+1. Create an account at [resend.com](https://resend.com) and verify a domain you control (add the DNS records it shows).
+2. Create an API key.
+3. Choose a from-address on that domain, e.g. `IITG Alumni Connect <connect@yourdomain.org>`.
+4. Use the same domain for Supabase SMTP (host `smtp.resend.com`, port 465, user `resend`, password = API key).
+
+### 3. Claude API (matching)
+
+Create a key at [console.anthropic.com](https://console.anthropic.com). `ANTHROPIC_MODEL` defaults to `claude-sonnet-5-5`; set it to `claude-haiku-5-5` for faster, cheaper matching. Cost per search grows with the number of alumni, and each student is limited to 20 searches a day.
+
+### 4. Deploy to Vercel
+
+1. Import this GitHub repo at [vercel.com/new](https://vercel.com/new).
+2. Add the environment variables from `.env.example`:
+
+   | Variable | Value |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase `anon` key |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Supabase `service_role` key (keep secret) |
+   | `NEXT_PUBLIC_SITE_URL` | Your production URL |
+   | `ANTHROPIC_API_KEY` | Claude API key |
+   | `RESEND_API_KEY` | Resend API key |
+   | `EMAIL_FROM` | e.g. `IITG Alumni Connect <connect@yourdomain.org>` |
+   | `CRON_SECRET` | Any long random string (`openssl rand -hex 32`) |
+
+3. Deploy. `vercel.json` schedules the reminder job daily at 13:30 UTC (7 PM IST); Vercel sends `CRON_SECRET` automatically.
+
+### 5. Make yourself an organizer
+
+Sign in once on the live site, then run this in the Supabase SQL Editor:
+
+```sql
+update public.profiles set is_admin = true where email = 'you@example.com';
+```
+
+Reload the site and the **Organizer** tab appears. New alumni wait there for approval.
+
+---
+
+## Local development
+
+```bash
+npm install
+cp .env.example .env.local   # fill in your Supabase keys; email and Claude keys are optional
+npm run dev                  # http://localhost:3000
+npm run test:db              # schema and booking-rule tests (no Supabase needed)
+npm run typecheck
+```
+
+Without `RESEND_API_KEY`, emails are logged to the console instead of sent. Without `ANTHROPIC_API_KEY`, matching uses keyword overlap.
+
+## Things to know
+
+- **Student email domain** is `iitg.ac.in`, set in `public.student_email_domain()` in the migration and `STUDENT_EMAIL_DOMAIN` in `src/lib/constants.ts`. Change both if needed.
+- **Institute mail filters** sometimes delay sign-in links to `@iitg.ac.in`. If students report missing links, ask IT to allow your sending domain.
+- **One role per account.** To test both sides yourself, use a student account and a separate alumni account.
+- **Limits** (in the migration): slots are 30, 45 or 60 minutes and must be booked at least 1 hour ahead; 60 upcoming slots per alumnus; 3 upcoming sessions per student.

@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import { getViewer, homeFor } from "@/lib/viewer";
 import { STUDENT_EMAIL_DOMAIN, isStudentEmail } from "@/lib/constants";
 import { StudentProfileForm } from "@/components/StudentProfileForm";
-import { AlumniProfileForm } from "@/components/AlumniProfileForm";
+import { AlumniProfileEditor } from "@/components/AlumniProfileEditor";
 
 export const metadata: Metadata = { title: "Join" };
 
@@ -58,10 +58,10 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
         <>
           <Stepper active={1} />
           <p className="lede">
-            Students see this when they're matched with you; skills and advice areas drive the matching. An organizer
-            reviews new profiles, then you open slots on your calendar.
+            Start by filling it from your LinkedIn, then check the details. Students see this when they're matched with
+            you. An organizer reviews new profiles, then you open slots on your calendar.
           </p>
-          <AlumniProfileForm
+          <AlumniProfileEditor
             isNew
             initial={{
               fullName: metaName, gradYear: "", degree: "B.Tech", branch: "", jobTitle: "", organization: "", city: "",

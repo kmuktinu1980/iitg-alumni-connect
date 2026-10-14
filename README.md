@@ -11,7 +11,7 @@ A mentoring site for IIT Guwahati. Alumni volunteer their skills and open slots 
 | Who | Signs in with | Gets in |
 |---|---|---|
 | Students | Email link to their `@iitg.ac.in` address | Immediately (the domain is the proof) |
-| Alumni | Google, LinkedIn, or an email link to any address | After an organizer approves them |
+| Alumni | Email link to any address; profile auto-filled from their LinkedIn PDF | After an organizer approves them |
 | Organizers | Any of the above, then marked admin in the database | Organizer page |
 
 - **Alumni** fill in batch, branch, role, skills, advice areas and a reusable meeting link (Zoom/Meet), then open 30/45/60-minute slots, one-off or weekly.
@@ -49,10 +49,7 @@ All writes go through `SECURITY DEFINER` database functions that check who is ca
 3. **Authentication → URL Configuration**
    - Site URL: your production URL, e.g. `https://iitg-alumni-connect.vercel.app`
    - Redirect URLs: add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`
-4. **Authentication → Sign In / Providers**
-   - **Email:** enabled. Keep "Confirm email" on.
-   - **Google:** create an OAuth client in Google Cloud Console (Web application). Authorized redirect URI: `https://YOUR-PROJECT.supabase.co/auth/v1/callback`. Paste the client ID and secret into Supabase.
-   - **LinkedIn (OIDC):** create an app at [linkedin.com/developers](https://www.linkedin.com/developers/), add the "Sign In with LinkedIn using OpenID Connect" product, set the same Supabase callback URL, and paste the client ID and secret into Supabase.
+4. **Authentication → Sign In / Providers → Email:** enabled (the default). Everyone signs in with an emailed link; no Google or LinkedIn app setup is needed.
 5. **Authentication → Emails → SMTP Settings:** turn on custom SMTP with your Resend credentials (step 2). Supabase's built-in sender is rate-limited to a handful of emails per hour, which isn't enough for real sign-ins.
 6. **Project Settings → API:** copy the project URL, the `anon` key and the `service_role` key.
 

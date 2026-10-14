@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { getViewer } from "@/lib/viewer";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { StudentProfileForm } from "@/components/StudentProfileForm";
-import { AlumniProfileForm } from "@/components/AlumniProfileForm";
+import { AlumniProfileEditor } from "@/components/AlumniProfileEditor";
 
 export const metadata: Metadata = { title: "My profile" };
 
@@ -55,7 +55,7 @@ export default async function ProfilePage() {
           ? "An organizer is reviewing your profile. You can still make changes."
           : "This is what students see when you're suggested as a mentor."}
       </p>
-      <AlumniProfileForm
+      <AlumniProfileEditor
         isNew={false}
         initial={{
           fullName: profile.full_name,

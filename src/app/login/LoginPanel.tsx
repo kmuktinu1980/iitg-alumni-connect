@@ -29,16 +29,6 @@ export function LoginPanel({ initial }: { initial: Who }) {
     setSentTo(addr);
   }
 
-  async function oauth(provider: "google" | "linkedin_oidc") {
-    setErr("");
-    setBusy(true);
-    const { error } = await createClient().auth.signInWithOAuth({ provider, options: { redirectTo: redirectTo() } });
-    if (error) {
-      setBusy(false);
-      setErr("That sign-in option isn't available right now. Use the email link instead.");
-    }
-  }
-
   if (sentTo)
     return (
       <div className="panel">
@@ -71,15 +61,9 @@ export function LoginPanel({ initial }: { initial: Who }) {
       </div>
 
       {who === "alumni" && (
-        <div className="grid gap-2.5">
-          <button className="btn btn-quiet justify-center" type="button" disabled={busy} onClick={() => oauth("google")}>
-            Continue with Google
-          </button>
-          <button className="btn btn-quiet justify-center" type="button" disabled={busy} onClick={() => oauth("linkedin_oidc")}>
-            Continue with LinkedIn
-          </button>
-          <p className="text-center text-[0.8rem] text-muted">or get a sign-in link by email</p>
-        </div>
+        <p className="text-[0.9rem] text-muted">
+          Use any email you check. After signing in you can fill your profile from your LinkedIn in a few seconds.
+        </p>
       )}
 
       <form onSubmit={sendLink} className="grid gap-3" noValidate>

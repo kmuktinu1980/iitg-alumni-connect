@@ -48,7 +48,7 @@ export default async function Landing() {
         <div className="panel">
           <h2 className="text-lg font-bold">For alumni</h2>
           <p className="text-[0.92rem] text-muted">
-            Sign in with Google, LinkedIn or any email. An organizer checks your profile before students can see it,
+            Sign in with any email and fill your profile from LinkedIn in seconds. An organizer checks it before students can see it,
             usually within a day.
           </p>
         </div>

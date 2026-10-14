@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireViewer } from "@/lib/viewer";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { batchLabel } from "@/lib/time";
+import { minNoticeCutoff } from "@/lib/constants";
 import { LocalTime } from "@/components/LocalTime";
 import { StatusButtons } from "./StatusButtons";
 
@@ -29,7 +30,7 @@ export default async function AdminPage() {
   const [{ data: people }, { data: alumni }, { data: slots }, { data: bookings }, { count: matchCount }] = await Promise.all([
     db.from("profiles").select("id, full_name, email, role, status, created_at").not("role", "is", null),
     db.from("alumni_profiles").select("user_id, grad_year, degree, branch, job_title, organization, city, linkedin_url, skills, bio, visible"),
-    db.from("slots").select("alumni_id").eq("is_booked", false).gt("starts_at", nowIso),
+    db.from("slots").select("alumni_id").eq("is_booked", false).gt("starts_at", minNoticeCutoff().toISOString()),
     db.from("bookings").select("id, alumni_id, student_id, starts_at, topic, status").order("starts_at"),
     db.from("match_requests").select("id", { count: "exact", head: true }),
   ]);

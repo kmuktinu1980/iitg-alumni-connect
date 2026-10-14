@@ -4,7 +4,8 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Mentor } from "@/lib/directory";
 import { bookSlot } from "@/app/actions";
-import { MAX_UPCOMING_BOOKINGS } from "@/lib/constants";
+import { MAX_UPCOMING_BOOKINGS, MIN_NOTICE_HOURS } from "@/lib/constants";
+import { MIN_BRIEF_CHARS } from "@/lib/brief-rules";
 import { batchLabel } from "@/lib/time";
 import { LocalTime } from "@/components/LocalTime";
 import { Field, FormError } from "@/components/Field";
@@ -111,7 +112,7 @@ export function FindMentor({
         </div>
         <p className="lede">
           Start from your profile, adjust the question for this session, and get alumni ranked by how well their
-          experience fits.
+          experience fits. Sessions are booked at least {MIN_NOTICE_HOURS} hours ahead so mentors have time to prepare.
         </p>
         {atLimit && (
           <p className="rounded-lg bg-amber-soft px-4 py-3 text-[0.92rem]">
@@ -297,21 +298,42 @@ function ConfirmBooking({
   const [topic, setTopic] = useState(defaultTopic);
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
+  const [review, setReview] = useState<{ feedback: string; suggestion: string; topic: string } | null>(null);
   const [busy, start] = useTransition();
+  const topicRef = useRef<HTMLTextAreaElement>(null);
+  const len = topic.trim().length;
 
-  function confirm() {
+  function submit(bookAsWritten: boolean) {
     setErr("");
     if (!topic.trim()) return setErr("Add what you want to cover so your mentor can prepare.");
+    if (len < MIN_BRIEF_CHARS) return setErr(`Add a little more: at least ${MIN_BRIEF_CHARS} characters so your mentor can prepare.`);
+    if (/\[[^\]]{3,}\]/.test(topic)) return setErr("Fill in the parts in [brackets] first.");
     start(async () => {
-      const r = await bookSlot({ slotId: slot.id, topic, note });
-      if (!r.ok) {
-        setErr(r.error);
-        router.refresh(); // pick up slots others just took
-        return;
-      }
-      router.push(`/sessions?booked=${r.data?.bookingId ?? ""}`);
+      const r = await bookSlot({ slotId: slot.id, topic, note, bookAsWritten });
+      if (r.ok) return router.push(`/sessions?booked=${r.bookingId}`);
+      if ("needsWork" in r) return setReview({ feedback: r.feedback, suggestion: r.suggestion, topic });
+      setErr(r.error);
+      router.refresh(); // pick up slots others just took
     });
   }
+
+  function applySuggestion() {
+    if (!review) return;
+    setTopic(review.suggestion);
+    setReview(null);
+    // Put the cursor on the first [placeholder] so it's quick to fill in.
+    requestAnimationFrame(() => {
+      const el = topicRef.current;
+      if (!el) return;
+      el.focus();
+      const i = review.suggestion.indexOf("[");
+      const j = i >= 0 ? review.suggestion.indexOf("]", i) : -1;
+      if (i >= 0 && j > i) el.setSelectionRange(i, j + 1);
+    });
+  }
+
+  // Editing after feedback means the next submit is checked again.
+  const edited = review && topic !== review.topic;
 
   return (
     <div className="grid gap-2.5 rounded-lg bg-river-soft p-3.5">
@@ -319,17 +341,49 @@ function ConfirmBooking({
         <b><LocalTime iso={slot.starts_at} mode="day" />, <LocalTime iso={slot.starts_at} mode="timeTz" /></b> · {slot.duration_min} min{" "}
         <span className="font-mono text-[0.78rem] text-muted"><LocalTime iso={slot.starts_at} mode="ist" /></span>
       </p>
-      <Field id={`topic-${slot.id}`} label="What do you want to cover?">
-        <textarea id={`topic-${slot.id}`} className="input" value={topic} autoFocus onChange={(e) => setTopic(e.target.value)}
-          placeholder="The one or two things you most want to get out of this session." />
-      </Field>
+      <div className="field">
+        <label htmlFor={`topic-${slot.id}`} className="field-label">What do you want to cover?</label>
+        <textarea ref={topicRef} id={`topic-${slot.id}`} className="input min-h-[110px]" value={topic} autoFocus
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder="The specific question or decision, and what you've tried so far. e.g. Our sensor's battery lasts 4 days even with duty cycling. What should I measure next to find where the power goes?" />
+        <span className="hint">
+          {mentorFirst} reads this to prepare. A concrete question and a line of context makes the session far more useful.
+          {len > 0 && len < MIN_BRIEF_CHARS && <span className="tabular"> ({len}/{MIN_BRIEF_CHARS})</span>}
+        </span>
+      </div>
+
+      {review && (
+        <div role="status" className="grid gap-2.5 rounded-lg border border-amber/40 bg-amber-soft p-3.5">
+          <p className="label-cap !text-amber">Make it easier to prepare for</p>
+          <p className="text-[0.92rem]">{review.feedback}</p>
+          {review.suggestion && (
+            <>
+              <p className="text-[0.84rem] text-muted">A sharper version. Fill in the parts in [brackets]:</p>
+              <blockquote className="whitespace-pre-wrap rounded-md bg-surface px-3 py-2 text-[0.9rem]">{review.suggestion}</blockquote>
+            </>
+          )}
+          <div className="flex flex-wrap gap-2.5">
+            {review.suggestion && (
+              <button className="btn btn-sm" type="button" onClick={applySuggestion}>Use this and edit</button>
+            )}
+            {!edited && (
+              <button className="btn btn-quiet btn-sm" type="button" disabled={busy} onClick={() => submit(true)}>
+                Book as written
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <Field id={`note-${slot.id}`} label={`Note for ${mentorFirst} (optional)`}>
         <input id={`note-${slot.id}`} className="input" value={note} onChange={(e) => setNote(e.target.value)}
           placeholder="e.g. I'll share my GitHub repo before the call" />
       </Field>
       {err && <FormError message={err} />}
       <div className="flex flex-wrap gap-2.5">
-        <button className="btn" type="button" disabled={busy} onClick={confirm}>{busy ? "Booking…" : "Confirm booking"}</button>
+        <button className="btn" type="button" disabled={busy || (!!review && !edited)} onClick={() => submit(false)}>
+          {busy ? "Checking…" : review ? "Check again and book" : "Confirm booking"}
+        </button>
         <button className="btn btn-quiet" type="button" onClick={onCancel}>Cancel</button>
       </div>
     </div>

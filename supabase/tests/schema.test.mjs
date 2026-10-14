@@ -1,8 +1,11 @@
 import { PGlite } from "@electric-sql/pglite";
 import fs from "node:fs";
+import path from "node:path";
 
+// Applies every migration in the given directory, in filename order.
 const db = new PGlite();
-const migration = fs.readFileSync(process.argv[2], "utf8");
+const dir = process.argv[2];
+const migrations = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
 
 await db.exec(`
   create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
@@ -13,7 +16,8 @@ await db.exec(`
   grant usage on schema auth to authenticated; grant execute on function auth.uid() to authenticated;
   grant usage on schema public to authenticated, anon;
 `);
-await db.exec(migration);
+for (const f of migrations) await db.exec(fs.readFileSync(path.join(dir, f), "utf8"));
+const T = "Validate the LoRa sensor design and power budget before field trials";
 
 const U = {
   alum: "00000000-0000-0000-0000-00000000000a",
@@ -54,24 +58,29 @@ await expectErr("non-IITG email can't become a student", () => stud(U.outsider),
 await expectOk("IITG student auto-approved", async () => { await stud(U.stu1); await stud(U.stu2); await stud(U.stu3);
   const r = await db.query(`select status from public.profiles where id=$1`, [U.stu1]); if (r.rows[0].status !== "approved") throw new Error(r.rows[0].status); });
 await expectOk("alumni sign-up goes to pending", async () => { const r = await alum(); if (r.rows[0].s !== "pending") throw new Error(r.rows[0].s); });
-await expectErr("pending alumni can't open slots", () => as(U.alum, `select public.add_slots(array[now() + interval '2 days'], 30)`), /approved alumni/);
+await expectErr("pending alumni can't open slots", () => as(U.alum, `select public.add_slots(array[now() + interval '3 days'], 30)`), /approved alumni/);
 await expectErr("non-admin can't approve", () => as(U.alum, `select public.admin_set_status($1, 'approved')`, [U.alum]), /organizers/);
 await expectOk("admin approves alumnus", () => as(U.admin, `select public.admin_set_status($1, 'approved')`, [U.alum]));
 await expectOk("re-saving profile keeps approved status", async () => { const r = await alum(); if (r.rows[0].s !== "approved") throw new Error(r.rows[0].s); });
 
-const added = await expectOk("add_slots skips past + overlapping", async () => {
+await expectOk("add_slots skips past, inside-48h and overlapping slots", async () => {
   const r = await as(U.alum, `select public.add_slots(array[
-     now() + interval '2 days', now() + interval '2 days 15 minutes', now() - interval '1 day',
-     now() + interval '3 days', now() + interval '4 days'], 30) as n`);
+     now() + interval '3 days', now() + interval '3 days 15 minutes', now() - interval '1 day',
+     now() + interval '30 hours', now() + interval '4 days', now() + interval '5 days'], 30) as n`);
   if (r.rows[0].n !== 3) throw new Error("added " + r.rows[0].n); return r;
 });
 const slots = (await db.query(`select id from public.slots order by starts_at`)).rows.map(r => r.id);
 
 let b1;
-await expectOk("student books a slot", async () => { b1 = (await as(U.stu1, `select public.book_slot($1, 'Validate sensor', '') as id`, [slots[0]])).rows[0].id; });
-await expectErr("second student can't take the same slot", () => as(U.stu2, `select public.book_slot($1, 'x', '')`, [slots[0]]), /just taken/);
-await expectErr("one upcoming session per mentor", () => as(U.stu1, `select public.book_slot($1, 'x', '')`, [slots[1]]), /already have an upcoming/);
-await expectErr("alumni can't book", () => as(U.alum, `select public.book_slot($1, 'x', '')`, [slots[1]]), /students/);
+await expectErr("vague one-word brief is rejected", () => as(U.stu1, `select public.book_slot($1, 'Career', '')`, [slots[0]]), /at least 40 characters/);
+await expectOk("student books a slot; brief check is stored", async () => {
+  b1 = (await as(U.stu1, `select public.book_slot($1, $2, '', '{"verdict":"specific","method":"claude"}'::jsonb) as id`, [slots[0], T])).rows[0].id;
+  const r = await db.query(`select brief_check->>'verdict' as v from public.bookings where id=$1`, [b1]);
+  if (r.rows[0].v !== "specific") throw new Error(JSON.stringify(r.rows));
+});
+await expectErr("second student can't take the same slot", () => as(U.stu2, `select public.book_slot($1, $2, '')`, [slots[0], T]), /just taken/);
+await expectErr("one upcoming session per mentor", () => as(U.stu1, `select public.book_slot($1, $2, '')`, [slots[1], T]), /already have an upcoming/);
+await expectErr("alumni can't book", () => as(U.alum, `select public.book_slot($1, $2, '')`, [slots[1], T]), /students/);
 await expectErr("can't remove a booked slot", () => as(U.alum, `select public.remove_slot($1)`, [slots[0]]), /booked/);
 await expectErr("unique index blocks a raw double booking", () => db.query(
   `insert into public.bookings (slot_id, alumni_id, student_id, starts_at, duration_min, topic) select id, alumni_id, $2, starts_at, 30, 't' from public.slots where id=$1`, [slots[0], U.stu2]), /duplicate key/);
@@ -101,11 +110,25 @@ await expectOk("student cancels; slot reopens", async () => {
   await as(U.stu1, `select public.cancel_booking($1)`, [b1]);
   const r = await db.query(`select is_booked from public.slots where id=$1`, [slots[0]]); if (r.rows[0].is_booked) throw new Error("still booked");
 });
-await expectOk("another student can now book the reopened slot", () => as(U.stu2, `select public.book_slot($1, 'Career', '')`, [slots[0]]));
+await expectOk("another student can now book the reopened slot", () => as(U.stu2, `select public.book_slot($1, $2, '')`, [slots[0], T]));
 await expectOk("hidden alumnus disappears from listings", async () => {
   await as(U.alum, `select public.save_alumni_profile('Asha Alum', 2001, 'B.Tech', 'ECE', 'Director', 'Acme', 'Seattle', 'UTC', '', 'https://meet.google.com/abc', array['IoT'], array['Research'], '', false)`);
   const r = await as(U.stu3, `select user_id from public.alumni_profiles`); if (r.rows.length !== 0) throw new Error(r.rows.length);
-  await expectErr("can't book a hidden alumnus", () => as(U.stu3, `select public.book_slot($1, 'x', '')`, [slots[2]]), /not taking bookings/);
+  await expectErr("can't book a hidden alumnus", () => as(U.stu3, `select public.book_slot($1, $2, '')`, [slots[2], T]), /not taking bookings/);
+});
+
+// 48-hour notice
+await expectErr("can't book a slot less than 48 hours away", async () => {
+  await as(U.alum, `select public.save_alumni_profile('Asha Alum', 2001, 'B.Tech', 'ECE', 'Director', 'Acme', 'Seattle', 'UTC', '', 'https://meet.google.com/abc', array['IoT'], array['Research'], '', true)`);
+  const id = (await db.query(`insert into public.slots (alumni_id, starts_at, duration_min) values ($1, now() + interval '30 hours', 30) returning id`, [U.alum])).rows[0].id;
+  await as(U.stu3, `select public.book_slot($1, $2, '')`, [id, T]);
+}, /48 hours ahead/);
+await expectOk("cancelling inside 48 hours does not reopen the slot", async () => {
+  const sid = (await db.query(`insert into public.slots (alumni_id, starts_at, duration_min, is_booked) values ($1, now() + interval '20 hours', 30, true) returning id`, [U.alum])).rows[0].id;
+  const bid = (await db.query(`insert into public.bookings (slot_id, alumni_id, student_id, starts_at, duration_min, topic) values ($1, $2, $3, now() + interval '20 hours', 30, $4) returning id`, [sid, U.alum, U.stu3, T])).rows[0].id;
+  await as(U.stu3, `select public.cancel_booking($1)`, [bid]);
+  const r = await db.query(`select is_booked from public.slots where id=$1`, [sid]);
+  if (!r.rows[0].is_booked) throw new Error("slot reopened inside the 48-hour window");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addSlots, removeSlot } from "@/app/actions";
-import { DURATIONS } from "@/lib/constants";
+import { DURATIONS, MIN_NOTICE_HOURS } from "@/lib/constants";
 import { dayKey, fmtIST } from "@/lib/time";
 import { LocalTime, TzName } from "@/components/LocalTime";
 import { Field, FormError } from "@/components/Field";
@@ -28,10 +28,11 @@ export function SlotManager({ rows, hidden }: { rows: SlotRow[]; hidden: boolean
   // Dates depend on the viewer's clock, so set them after mount.
   useEffect(() => {
     const t = new Date();
-    const tomorrow = new Date(t);
-    tomorrow.setDate(t.getDate() + 1);
-    setMinDate(isoDate(t));
-    setDate((d) => d || isoDate(tomorrow));
+    const first = new Date(t.getTime() + MIN_NOTICE_HOURS * 3600 * 1000);
+    const suggested = new Date(t);
+    suggested.setDate(t.getDate() + Math.ceil(MIN_NOTICE_HOURS / 24) + 1);
+    setMinDate(isoDate(first));
+    setDate((d) => d || isoDate(suggested));
   }, []);
 
   const preview = useMemo(() => {
@@ -55,8 +56,9 @@ export function SlotManager({ rows, hidden }: { rows: SlotRow[]; hidden: boolean
       const r = await addSlots({ starts, duration: duration as 30 | 45 | 60 });
       if (!r.ok) return setErr(r.error);
       const { added = 0, skipped = 0 } = r.data ?? {};
-      if (!added) return setErr("Those times are in the past, less than an hour away, or overlap slots you already have.");
-      setMsg(`Added ${added} ${added === 1 ? "slot" : "slots"}.${skipped ? ` Skipped ${skipped} that clashed or were too soon.` : ""}`);
+      if (!added)
+        return setErr(`Those times are less than ${MIN_NOTICE_HOURS} hours away or overlap slots you already have. Students book at least ${MIN_NOTICE_HOURS} hours ahead.`);
+      setMsg(`Added ${added} ${added === 1 ? "slot" : "slots"}.${skipped ? ` Skipped ${skipped} that clashed or were less than ${MIN_NOTICE_HOURS} hours away.` : ""}`);
       router.refresh();
     });
   }
@@ -69,8 +71,9 @@ export function SlotManager({ rows, hidden }: { rows: SlotRow[]; hidden: boolean
       <section className="grid gap-3.5">
         <h1 className="text-[1.6rem] font-bold">My availability</h1>
         <p className="lede">
-          Open a few slots each month. Students book them first come, first served. You'll get an email with their
-          project brief and a calendar invite for each booking.
+          Open a few slots each month. Students book them first come, first served, at least {MIN_NOTICE_HOURS} hours
+          ahead, so you'll always have time to read their brief. Each booking arrives by email with the project brief and
+          a calendar invite.
         </p>
         {hidden && (
           <p className="rounded-lg bg-amber-soft px-4 py-3 text-[0.92rem]">
@@ -157,6 +160,10 @@ function SlotLine({ row }: { row: SlotRow }) {
   const [asking, setAsking] = useState(false);
   const [err, setErr] = useState("");
   const [busy, start] = useTransition();
+  const [tooSoon, setTooSoon] = useState(false);
+  useEffect(() => {
+    setTooSoon(!row.booked && new Date(row.starts_at).getTime() < Date.now() + MIN_NOTICE_HOURS * 3600 * 1000);
+  }, [row]);
 
   return (
     <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 rounded-lg border border-line bg-surface px-3 py-2.5">
@@ -165,7 +172,13 @@ function SlotLine({ row }: { row: SlotRow }) {
       </span>
       <LocalTime iso={row.starts_at} mode="ist" className="font-mono text-[0.76rem] text-muted" />
       <span className="min-w-0 flex-1 text-[0.86rem]">{row.bookedBy ?? ""}</span>
-      <span className={`pill ${row.booked ? "pill-booked" : "pill-open"}`}>{row.booked ? "Booked" : "Open"}</span>
+      {row.booked ? (
+        <span className="pill pill-booked">Booked</span>
+      ) : tooSoon ? (
+        <span className="pill bg-sunk text-muted" title={`Students can't book less than ${MIN_NOTICE_HOURS} hours ahead`}>Closed for booking</span>
+      ) : (
+        <span className="pill pill-open">Open</span>
+      )}
       {row.booked ? (
         <Link href="/sessions" className="text-[0.86rem]">See brief</Link>
       ) : asking ? (

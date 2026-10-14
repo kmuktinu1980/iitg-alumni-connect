@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { minNoticeCutoff } from "@/lib/constants";
 
 export type Slot = { id: string; starts_at: string; duration_min: number };
 
@@ -48,7 +49,7 @@ export async function loadDirectory(supabase: SupabaseClient): Promise<Mentor[]>
   const alumni = (rows ?? []) as AlumniRow[];
   if (!alumni.length) return [];
 
-  const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const soon = minNoticeCutoff().toISOString(); // only slots students can still book
   const { data: slotRows, error: sErr } = await supabase
     .from("slots")
     .select("id, alumni_id, starts_at, duration_min")

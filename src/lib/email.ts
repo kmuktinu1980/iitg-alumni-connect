@@ -175,7 +175,7 @@ export async function sendCancellationEmails(bookingId: string) {
       subject: `Cancelled: session with ${x.s.full_name}`,
       lines: [
         `${by} cancelled the session on ${when(x.b.starts_at, x.alum.timezone)}.`,
-        "If it was more than an hour away, the slot is open again for other students.",
+        "If it was more than 48 hours away, the slot is open again for other students.",
       ],
       cta: { label: "Open My availability", href: `${siteUrl()}/availability` },
       ics,

@@ -28,6 +28,9 @@ export const YEARS = ["1st year", "2nd year", "3rd year", "4th year", "5th year"
 export const DURATIONS = [30, 45, 60] as const;
 
 export const MAX_UPCOMING_BOOKINGS = 3;
+/** Students book at least this far ahead. Must match public.min_notice() in the database. */
+export const MIN_NOTICE_HOURS = 48;
+export const minNoticeCutoff = () => new Date(Date.now() + MIN_NOTICE_HOURS * 3600 * 1000);
 export const MATCHES_PER_DAY = 20;
 
 export function isStudentEmail(email: string | null | undefined) {

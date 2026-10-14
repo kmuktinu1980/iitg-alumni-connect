@@ -6,6 +6,8 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { ADVICE_AREAS, BRANCHES, DEGREES, DURATIONS, YEARS } from "@/lib/constants";
 import { sendApprovalEmail, sendBookingEmails, sendCancellationEmails } from "@/lib/email";
+import { checkBrief } from "@/lib/brief-check";
+import { MIN_BRIEF_CHARS } from "@/lib/brief-rules";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -124,24 +126,67 @@ export async function removeSlot(slotId: string): Promise<ActionResult> {
 // ---------------------------------------------------------------- bookings
 const bookSchema = z.object({
   slotId: z.string().uuid(),
-  topic: z.string().trim().min(1, "Add what you want to cover so your mentor can prepare.").max(1000),
+  topic: z
+    .string()
+    .trim()
+    .min(1, "Add what you want to cover so your mentor can prepare.")
+    .min(MIN_BRIEF_CHARS, "Describe what you want to cover in a sentence or two (at least 40 characters) so your mentor can prepare.")
+    .max(1000),
   note: z.string().trim().max(500),
+  /** Set when the student has seen the feedback and chose to book as written. */
+  bookAsWritten: z.boolean().default(false),
 });
 
-export async function bookSlot(input: z.input<typeof bookSchema>): Promise<ActionResult<{ bookingId: string }>> {
+export type BookResult =
+  | { ok: true; bookingId: string }
+  | { ok: false; error: string }
+  | { ok: false; needsWork: true; feedback: string; suggestion: string };
+
+export async function bookSlot(input: z.input<typeof bookSchema>): Promise<BookResult> {
   const parsed = bookSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: zodError(parsed.error) };
+  const d = parsed.data;
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Sign in again to continue." };
+
+  // Specificity check: is the brief something a mentor can prepare from?
+  let briefCheck: Record<string, unknown>;
+  if (d.bookAsWritten) {
+    briefCheck = { verdict: "booked_as_written", at: new Date().toISOString() };
+  } else {
+    const [{ data: slot }, { data: sp }] = await Promise.all([
+      supabase.from("slots").select("alumni_id").eq("id", d.slotId).single(),
+      supabase.from("student_profiles").select("project_title, project_summary").eq("user_id", user.id).single(),
+    ]);
+    if (!slot) return { ok: false, error: "That slot is no longer offered." };
+    const [{ data: mp }, { data: ma }] = await Promise.all([
+      supabase.from("profiles").select("full_name").eq("id", slot.alumni_id).single(),
+      supabase.from("alumni_profiles").select("job_title, organization, skills").eq("user_id", slot.alumni_id).single(),
+    ]);
+    const verdict = await checkBrief({
+      topic: d.topic,
+      project: sp?.project_title ?? "",
+      summary: sp?.project_summary ?? "",
+      mentor: [mp?.full_name, ma?.job_title, ma?.organization, ma?.skills?.join(", ")].filter(Boolean).join(" · "),
+    });
+    if (!verdict.specific) return { ok: false, needsWork: true, feedback: verdict.feedback, suggestion: verdict.suggestion };
+    briefCheck = { verdict: "specific", method: verdict.method, at: new Date().toISOString() };
+  }
+
   const { data, error } = await supabase.rpc("book_slot", {
-    p_slot: parsed.data.slotId,
-    p_topic: parsed.data.topic,
-    p_note: parsed.data.note,
+    p_slot: d.slotId,
+    p_topic: d.topic,
+    p_note: d.note,
+    p_brief_check: briefCheck,
   });
   if (error) return { ok: false, error: friendly(error) };
   const bookingId = String(data);
   after(() => sendBookingEmails(bookingId).catch((e) => console.error("booking email", e)));
   revalidatePath("/", "layout");
-  return { ok: true, data: { bookingId } };
+  return { ok: true, bookingId };
 }
 
 export async function cancelBooking(bookingId: string): Promise<ActionResult> {

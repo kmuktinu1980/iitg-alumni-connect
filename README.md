@@ -16,21 +16,23 @@ A mentoring site for IIT Guwahati. Alumni volunteer their skills and open slots 
 
 - **Alumni** fill in batch, branch, role, skills, advice areas and a reusable meeting link (Zoom/Meet), then open 30/45/60-minute slots, one-off or weekly.
 - **Students** describe their project and question. Claude reads every listed alumni profile and returns up to five with a fit score and a one-line reason. If the API key is missing or the call fails, a keyword ranking is used instead.
-- **Booking** is first come, first served. The database guarantees one booking per slot, one upcoming session per student–mentor pair, and at most three upcoming sessions per student.
+- **Booking** is first come, first served, at least **48 hours ahead** so mentors have time to read the brief. The database guarantees one booking per slot, one upcoming session per student–mentor pair, and at most three upcoming sessions per student. A cancelled slot reopens only if it's still 48+ hours away.
+- **Specificity check:** before a booking goes through, the student's "what do you want to cover" is checked. Obviously vague briefs ("career guidance", "help with my project") are caught by simple rules; anything else is judged by Claude (Haiku by default). If the brief is too vague, the student sees what's missing and a sharper rewrite of their own text, with `[brackets]` for details only they know. They can use it, edit, or book as written. The outcome is stored on the booking (`brief_check`) so organizers can see brief quality.
 - **Email:** booking confirmation with a calendar invite to both people, cancellation (removes the event), a reminder the day before, and an approval email to alumni.
 - **Privacy:** students never see alumni emails; meeting links are shown only to the student who booked; an alumnus sees a student's project and email only once that student books them.
 
 ## Repository layout
 
 ```
-supabase/migrations/0001_init.sql   Schema, security rules and all write logic
-supabase/tests/schema.test.mjs      27 tests run against an in-memory Postgres
+supabase/migrations/                Schema, security rules and all write logic
+supabase/tests/schema.test.mjs      30 tests run against an in-memory Postgres
 src/app/                            Pages: /, /login, /onboarding, /pending, /find,
                                     /sessions, /availability, /profile, /admin
 src/app/actions.ts                  Server actions (each calls a database function)
 src/app/api/match/route.ts          Matching endpoint (rate-limited, logged)
 src/app/api/cron/reminders/route.ts Daily reminder job
 src/lib/matching.ts                 Claude ranking + keyword fallback
+src/lib/brief-check.ts, brief-rules.ts  Specificity check (Claude + rules)
 src/lib/email.ts, src/lib/ics.ts    Emails and calendar invites
 ```
 
@@ -43,7 +45,7 @@ All writes go through `SECURITY DEFINER` database functions that check who is ca
 ### 1. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com) (the free tier is enough for a pilot). Pick a region near India, such as Mumbai.
-2. Open **SQL Editor**, paste the contents of `supabase/migrations/0001_init.sql`, and run it.
+2. Open **SQL Editor** and run each file in `supabase/migrations/` in order (`0001_init.sql`, then `0002_notice_and_brief_check.sql`).
 3. **Authentication → URL Configuration**
    - Site URL: your production URL, e.g. `https://iitg-alumni-connect.vercel.app`
    - Redirect URLs: add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`
@@ -63,7 +65,12 @@ All writes go through `SECURITY DEFINER` database functions that check who is ca
 
 ### 3. Claude API (matching)
 
-Create a key at [console.anthropic.com](https://console.anthropic.com). `ANTHROPIC_MODEL` defaults to `claude-sonnet-5-5`; set it to `claude-haiku-5-5` for faster, cheaper matching. Cost per search grows with the number of alumni, and each student is limited to 20 searches a day.
+Create a key at [console.anthropic.com](https://console.anthropic.com). It powers two things:
+
+- **Matching** uses `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`). Cost per search grows with the number of alumni; each student is limited to 20 searches a day.
+- **The specificity check** uses `ANTHROPIC_CHECK_MODEL` (default `claude-haiku-5-5`). It's one short call per booking attempt.
+
+Without a key, matching uses keyword overlap and the specificity check uses rules only.
 
 ### 4. Deploy to Vercel
 
@@ -112,4 +119,4 @@ Without `RESEND_API_KEY`, emails are logged to the console instead of sent. With
 - **Student email domain** is `iitg.ac.in`, set in `public.student_email_domain()` in the migration and `STUDENT_EMAIL_DOMAIN` in `src/lib/constants.ts`. Change both if needed.
 - **Institute mail filters** sometimes delay sign-in links to `@iitg.ac.in`. If students report missing links, ask IT to allow your sending domain.
 - **One role per account.** To test both sides yourself, use a student account and a separate alumni account.
-- **Limits** (in the migration): slots are 30, 45 or 60 minutes and must be booked at least 1 hour ahead; 60 upcoming slots per alumnus; 3 upcoming sessions per student.
+- **Limits** (in the migrations): slots are 30, 45 or 60 minutes and must be booked at least 48 hours ahead (`public.min_notice()`, mirrored by `MIN_NOTICE_HOURS` in `src/lib/constants.ts`; change both together); briefs need at least 40 characters; 60 upcoming slots per alumnus; 3 upcoming sessions per student.

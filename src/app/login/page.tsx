@@ -14,7 +14,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       <h1 className="text-[1.6rem] font-bold">Sign in</h1>
       {sp.error && (
         <p role="alert" className="rounded-lg bg-bad-soft px-4 py-3 text-[0.92rem]">
-          That sign-in link didn't work. It may have expired or been opened in a different browser. Request a new one below.
+          {sp.error === "browser"
+            ? "That sign-in link was opened in a different browser from the one you requested it in (email apps often use their own browser). Request a new link and open it in this browser, or copy the link from the email and paste it here."
+            : "That sign-in link didn't work. Links work once and expire after an hour. Request a new one below."}
         </p>
       )}
       <LoginPanel initial={sp.as === "alumni" ? "alumni" : "student"} />

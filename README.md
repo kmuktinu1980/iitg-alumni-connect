@@ -50,6 +50,9 @@ All writes go through `SECURITY DEFINER` database functions that check who is ca
    - Site URL: your production URL, e.g. `https://iitg-alumni-connect.vercel.app`
    - Redirect URLs: add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`
 4. **Authentication → Sign In / Providers → Email:** enabled (the default). Everyone signs in with an emailed link; no Google or LinkedIn app setup is needed.
+   - **Recommended, for links opened on phones:** under **Authentication → Emails → Templates**, edit both **Confirm signup** and **Magic Link** so the link is
+     `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email`
+     The default link only works in the same browser that requested it, which fails when someone opens the email in their mail app.
 5. **Authentication → Emails → SMTP Settings:** turn on custom SMTP with your Resend credentials (step 2). Supabase's built-in sender is rate-limited to a handful of emails per hour, which isn't enough for real sign-ins.
 6. **Project Settings → API:** copy the project URL, the `anon` key and the `service_role` key.
 

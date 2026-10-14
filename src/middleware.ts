@@ -34,6 +34,23 @@ export async function middleware(request: NextRequest) {
     return configErrorPage(problems);
   }
 
+  // Supabase falls back to the Site URL (usually "/") when the requested
+  // redirect isn't on its allow-list, so a sign-in code can arrive on any
+  // page. Hand it to the callback that finishes sign-in.
+  const params = request.nextUrl.searchParams;
+  const path = request.nextUrl.pathname;
+  if (!path.startsWith("/auth/") && (params.has("code") || params.has("token_hash"))) {
+    const to = request.nextUrl.clone();
+    to.pathname = "/auth/callback";
+    return NextResponse.redirect(to);
+  }
+  if (!path.startsWith("/auth/") && !path.startsWith("/login") && params.has("error_description")) {
+    const to = request.nextUrl.clone();
+    to.pathname = "/login";
+    to.search = "?error=link";
+    return NextResponse.redirect(to);
+  }
+
   let response = NextResponse.next({ request });
   try {
     const supabase = createServerClient(supabaseUrl(), supabaseAnonKey(), {
@@ -54,7 +71,6 @@ export async function middleware(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const path = request.nextUrl.pathname;
     if (!user && PROTECTED.some((p) => path === p || path.startsWith(p + "/"))) {
       const to = request.nextUrl.clone();
       to.pathname = "/login";

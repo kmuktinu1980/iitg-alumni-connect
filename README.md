@@ -45,7 +45,7 @@ All writes go through `SECURITY DEFINER` database functions that check who is ca
 ### 1. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com) (the free tier is enough for a pilot). Pick a region near India, such as Mumbai.
-2. Open **SQL Editor** and run each file in `supabase/migrations/` in order (`0001_init.sql`, then `0002_notice_and_brief_check.sql`).
+2. Open **SQL Editor** and run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_notice_and_brief_check.sql`, `0003_advisor_tidy.sql`).
 3. **Authentication → URL Configuration**
    - Site URL: your production URL, e.g. `https://iitg-alumni-connect.vercel.app`
    - Redirect URLs: add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`

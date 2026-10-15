@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient } from "@/lib/claude";
 import { ADVICE_AREAS, BRANCHES, DEGREES } from "@/lib/constants";
 
 export type AutofillResult = {
@@ -28,7 +29,7 @@ export async function extractProfile(input: { pdf?: Buffer; text?: string }): Pr
   if (!process.env.ANTHROPIC_API_KEY) throw new AutofillError("Autofill isn't switched on for this site yet. Fill in the form below instead.");
   if (input.pdf && input.pdf.length > MAX_PDF_BYTES) throw new AutofillError("That PDF is over 4 MB. LinkedIn's own Save to PDF export is usually well under that.");
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 45_000, maxRetries: 1 });
+  const client = claudeClient({ timeout: 45_000 });
 
   const instructions = `This is an IIT Guwahati alumnus's LinkedIn profile${input.pdf ? " (LinkedIn's Save to PDF export)" : " (pasted text)"}. Fill in their mentor profile for a student-alumni mentoring program.
 

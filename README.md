@@ -65,12 +65,14 @@ All writes go through `SECURITY DEFINER` database functions that check who is ca
 
 ### 3. Claude API (matching)
 
-Create a key at [console.anthropic.com](https://console.anthropic.com). It powers two things:
+Create a key at [console.anthropic.com](https://console.anthropic.com) **inside a workspace** (pick the workspace, e.g. Default, before clicking Create Key; an organization-level key fails with "not scoped to a workspace" unless you also set `ANTHROPIC_WORKSPACE_ID`). The API is billed separately from Claude Pro/Max plans, so add prepaid credit under Billing. It powers three things:
 
 - **Matching** uses `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`). Cost per search grows with the number of alumni; each student is limited to 20 searches a day.
 - **The specificity check** uses `ANTHROPIC_CHECK_MODEL` (default `claude-haiku-5-5`). It's one short call per booking attempt.
 
-Without a key, matching uses keyword overlap and the specificity check uses rules only.
+- **LinkedIn autofill** uses `ANTHROPIC_MODEL`. One call per profile; limited to 10 a day per person.
+
+Without a key, matching uses keyword overlap, the specificity check uses rules only, and alumni fill their profile by hand.
 
 ### 4. Deploy to Vercel
 

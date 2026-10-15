@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient } from "@/lib/claude";
 import { describeClaudeError } from "@/lib/claude-errors";
 import type { Mentor } from "@/lib/directory";
 
@@ -33,7 +34,7 @@ export async function findMatches(q: MatchQuery, mentors: Mentor[]): Promise<Mat
 }
 
 async function matchWithClaude(q: MatchQuery, mentors: Mentor[]): Promise<Match[]> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 25_000, maxRetries: 1 });
+  const client = claudeClient({ timeout: 25_000 });
   const pool = mentors.slice(0, MAX_MENTORS);
   const keyed = pool.map((m, i) => ({ key: `A${i + 1}`, m }));
   const lines = keyed

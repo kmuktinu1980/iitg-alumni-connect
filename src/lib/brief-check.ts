@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient } from "@/lib/claude";
 import { describeClaudeError } from "@/lib/claude-errors";
 import { quickBriefCheck } from "@/lib/brief-rules";
 
@@ -30,7 +31,7 @@ export async function checkBrief(ctx: Context): Promise<BriefVerdict> {
 }
 
 async function claudeCheck(ctx: Context): Promise<BriefVerdict> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 15_000, maxRetries: 1 });
+  const client = claudeClient({ timeout: 15_000 });
   const prompt = `An IIT Guwahati student is booking a one-on-one session (30-60 minutes) with a volunteer alumnus. Decide whether the student's brief is specific enough for the alumnus to prepare useful advice.
 
 <context>

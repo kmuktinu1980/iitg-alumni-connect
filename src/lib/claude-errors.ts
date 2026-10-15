@@ -13,6 +13,8 @@ export function describeClaudeError(e: unknown): { message: string; setup: boole
       return { setup: true, message: "Setup problem: the Claude API key isn't valid. Check ANTHROPIC_API_KEY in Vercel (no quotes or spaces), then redeploy." };
     if (e.status === 403)
       return { setup: true, message: "Setup problem: the Claude API key doesn't have permission for this. Check the key's workspace in console.anthropic.com." };
+    if (/workspace/i.test(detail) && /scoped|anthropic-workspace-id/i.test(detail))
+      return { setup: true, message: "Setup problem: this Claude API key isn't tied to a workspace. In console.anthropic.com, create a new key inside a workspace (e.g. Default), put it in ANTHROPIC_API_KEY in Vercel, and redeploy." };
     if (/credit balance|billing|purchase credits/i.test(detail))
       return { setup: true, message: "Setup problem: the Claude API account has no credit. Add credit at console.anthropic.com → Billing, then try again." };
     if (e.status === 404 || /model/i.test(detail) && /not.*(found|exist|available)/i.test(detail))

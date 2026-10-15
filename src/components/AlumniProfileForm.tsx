@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveAlumniProfile } from "@/app/actions";
-import { ADVICE_AREAS, BRANCHES, DEGREES } from "@/lib/constants";
+import { ADVICE_GROUPS, BRANCHES, DEGREES } from "@/lib/constants";
 import { Field, FormError } from "@/components/Field";
 
 export type AlumniInitial = {
@@ -112,16 +112,25 @@ export function AlumniProfileForm({ initial, isNew }: { initial: AlumniInitial; 
         <input className="input" id="skills" name="skills" defaultValue={initial.skills.join(", ")}
           placeholder="Embedded systems, IoT, product strategy, fundraising" />
       </Field>
-      <fieldset className="field">
-        <legend className="field-label mb-1.5">Happy to advise on</legend>
-        <div className="flex flex-wrap gap-2">
-          {ADVICE_AREAS.map((a) => (
-            <label key={a} className="check-chip">
-              <input type="checkbox" name="adviceAreas" value={a} defaultChecked={areas.has(a)} className="accent-river" />
-              {a}
-            </label>
-          ))}
-        </div>
+      <fieldset className="field gap-3">
+        <legend className="field-label mb-1">Happy to advise on</legend>
+        <span className="hint -mt-1">Pick the areas where you have hands-on experience. Matching weighs these with your skills.</span>
+        {ADVICE_GROUPS.map((g) => (
+          <div key={g.title} className="grid gap-1.5">
+            <p className="label-cap">
+              {g.title}
+              {g.hint && <span className="ml-2 normal-case tracking-normal font-normal">· {g.hint}</span>}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {g.areas.map((a) => (
+                <label key={a} className="check-chip">
+                  <input type="checkbox" name="adviceAreas" value={a} defaultChecked={areas.has(a)} className="accent-river" />
+                  {a}
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
       </fieldset>
       <Field id="bio" label="About you">
         <textarea className="input" id="bio" name="bio" defaultValue={initial.bio}

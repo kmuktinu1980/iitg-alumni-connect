@@ -54,3 +54,26 @@ jobs:
       - name: Server logs (on failure)
         if: failure()
         run: tail -n 50 tests/stack/logs/*.log || true
+
+  # Manual only: runs the same steel threads against the live Supabase project.
+  # Creates throwaway accounts (no emails sent) and deletes them at the end.
+  # Needs repository secrets PROD_SUPABASE_URL, PROD_SUPABASE_ANON_KEY, PROD_SUPABASE_SERVICE_ROLE_KEY.
+  api-production:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: API steel threads against production
+        env:
+          TEST_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          TEST_SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PROD_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$TEST_SUPABASE_SERVICE_ROLE_KEY" ]; then echo "Add the PROD_SUPABASE_* repository secrets first."; exit 1; fi
+          npm run test:api -- --reporter=verbose

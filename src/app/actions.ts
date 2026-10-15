@@ -24,7 +24,16 @@ function friendly(e: DbError | unknown): string {
 }
 
 const zodError = (e: z.ZodError) => e.issues[0]?.message ?? "Check the form and try again.";
-const httpsUrl = z.string().trim().max(500).regex(/^https:\/\/\S+\.\S+/i, "Links must start with https://");
+/** Accepts "meet.google.com/abc" or "http://…" and stores "https://…". */
+const withHttps = (v: unknown) => {
+  const t = String(v ?? "").trim();
+  if (!t) return t;
+  if (/^https:\/\//i.test(t)) return t;
+  if (/^http:\/\//i.test(t)) return "https://" + t.slice(7);
+  return "https://" + t.replace(/^\/+/, "");
+};
+const link = (field: string) =>
+  z.preprocess(withHttps, z.string().min(1, `Add ${field.replace(/^Your /, "your ")}.`).max(500).regex(/^https:\/\/[^\s/]+\.[^\s]+$/i, `${field} doesn't look like a web address. Paste the full link, e.g. from your browser's address bar.`));
 
 // ---------------------------------------------------------------- profiles
 const studentSchema = z.object({
@@ -63,8 +72,8 @@ const alumniSchema = z.object({
   organization: z.string().trim().min(1, "Add your organization.").max(120),
   city: z.string().trim().max(80),
   timezone: z.string().trim().max(64),
-  linkedinUrl: z.union([z.literal(""), httpsUrl]),
-  meetingLink: httpsUrl,
+  linkedinUrl: z.preprocess(withHttps, z.union([z.literal(""), link("Your LinkedIn URL")])),
+  meetingLink: link("Your meeting link"),
   skills: z.array(z.string().trim().min(1).max(40)).min(1, "Add at least one skill.").max(20),
   adviceAreas: z.array(z.enum(ADVICE_AREAS)).min(1, "Pick at least one area you can advise on."),
   bio: z.string().trim().max(1200),

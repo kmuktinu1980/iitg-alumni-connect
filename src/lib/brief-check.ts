@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { describeClaudeError } from "@/lib/claude-errors";
 import { quickBriefCheck } from "@/lib/brief-rules";
 
 export type BriefVerdict = {
@@ -23,7 +24,7 @@ export async function checkBrief(ctx: Context): Promise<BriefVerdict> {
   try {
     return await claudeCheck(ctx);
   } catch (e) {
-    console.error("Brief check failed, letting the booking through:", e);
+    console.error("Brief check failed, letting the booking through:", describeClaudeError(e).message, e);
     return { specific: true, feedback: "", suggestion: "", method: "rules" };
   }
 }

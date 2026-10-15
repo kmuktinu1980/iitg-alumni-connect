@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { describeClaudeError } from "@/lib/claude-errors";
 import type { Mentor } from "@/lib/directory";
 
 export type MatchQuery = {
@@ -20,7 +21,7 @@ export async function findMatches(q: MatchQuery, mentors: Mentor[]): Promise<Mat
     try {
       return { matches: await matchWithClaude(q, mentors), method: "claude" };
     } catch (e) {
-      console.error("Claude matching failed, falling back to keywords:", e);
+      console.error("Claude matching failed, falling back to keywords:", describeClaudeError(e).message, e);
       return {
         matches: matchByKeywords(q, mentors),
         method: "keywords",

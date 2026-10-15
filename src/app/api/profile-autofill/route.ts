@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getViewer } from "@/lib/viewer";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AutofillError, MAX_PROFILE_TEXT, extractProfile } from "@/lib/profile-autofill";
+import { describeClaudeError } from "@/lib/claude-errors";
 
 export const maxDuration = 60;
 
@@ -56,7 +57,8 @@ export async function POST(req: Request) {
     return NextResponse.json(fields);
   } catch (e) {
     if (e instanceof AutofillError) return NextResponse.json({ error: e.message }, { status: 400 });
-    console.error("autofill failed", e);
-    return NextResponse.json({ error: "Couldn't read that profile right now. Try again, or fill in the form directly." }, { status: 502 });
+    const { message, setup } = describeClaudeError(e);
+    console.error(`autofill failed${setup ? " (setup)" : ""}:`, message, e);
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

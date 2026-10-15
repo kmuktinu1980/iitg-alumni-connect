@@ -44,9 +44,10 @@ export default async function AdminPage() {
   const db = createAdminClient();
   const nowIso = new Date().toISOString();
 
-  const [{ data: people }, { data: alumni }, { data: slots }, { data: bookings }, { data: statsData, error: statsError }] = await Promise.all([
+  const [{ data: people }, { data: alumni }, { data: studentRows }, { data: slots }, { data: bookings }, { data: statsData, error: statsError }] = await Promise.all([
     db.from("profiles").select("id, full_name, email, role, status, created_at").not("role", "is", null),
     db.from("alumni_profiles").select("user_id, grad_year, degree, branch, job_title, organization, city, linkedin_url, skills, bio, visible"),
+    db.from("student_profiles").select("user_id, branch, year_of_study, project_title"),
     db.from("slots").select("alumni_id").eq("is_booked", false).gt("starts_at", minNoticeCutoff().toISOString()),
     db.from("bookings").select("id, alumni_id, student_id, starts_at, topic, status").order("starts_at"),
     // Analytics come from the admin_stats() API, called as the signed-in organizer.
@@ -63,11 +64,20 @@ export default async function AdminPage() {
   const upcoming = all.filter((b) => b.status === "booked" && b.starts_at > nowIso);
   const sessionsBy = new Map<string, number>();
   for (const b of all) if (b.status === "booked") sessionsBy.set(b.alumni_id, (sessionsBy.get(b.alumni_id) ?? 0) + 1);
+  const studentSessions = new Map<string, { upcoming: number; done: number }>();
+  for (const b of all) {
+    if (b.status !== "booked") continue;
+    const c = studentSessions.get(b.student_id) ?? { upcoming: 0, done: 0 };
+    if (b.starts_at > nowIso) c.upcoming++;
+    else c.done++;
+    studentSessions.set(b.student_id, c);
+  }
+  const studentById = new Map((studentRows ?? []).map((r) => [r.user_id as string, r as { branch: string; year_of_study: string; project_title: string }]));
 
   const alumniPeople = (people ?? []).filter((p) => p.role === "alumni");
   const pending = alumniPeople.filter((p) => p.status === "pending").sort((a, b) => a.created_at.localeCompare(b.created_at));
   const listed = alumniPeople.filter((p) => p.status !== "pending").sort((a, b) => (alumniById.get(a.id)?.grad_year ?? 0) - (alumniById.get(b.id)?.grad_year ?? 0));
-  const students = (people ?? []).filter((p) => p.role === "student");
+  const students = (people ?? []).filter((p) => p.role === "student").sort((a, b) => b.created_at.localeCompare(a.created_at));
 
   const stats: [string, number][] = [
     ["Alumni approved", st.alumni_approved],
@@ -212,6 +222,44 @@ export default async function AdminPage() {
                           <StatusButtons userId={p.id} current={p.status as "approved" | "rejected"} compact />
                         </div>
                       </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-[1.25rem] font-bold">Students</h2>
+          <span className="font-mono text-[0.8rem] text-muted">{students.length} signed up</span>
+        </div>
+        {students.length === 0 ? (
+          <p className="text-muted">No students have signed up yet.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-[10px] border border-line bg-surface">
+            <table className="w-full border-collapse text-[0.88rem]">
+              <thead>
+                <tr>{["Name", "Branch · year", "Project", "Sessions", "Joined"].map((h) => <th key={h} className="label-cap border-b border-line px-3 py-2 text-left">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {students.map((p) => {
+                  const sp = studentById.get(p.id);
+                  const c = studentSessions.get(p.id);
+                  return (
+                    <tr key={p.id} className="border-b border-line last:border-0 align-top">
+                      <td className="px-3 py-2">
+                        {p.full_name || "—"}
+                        <div className="font-mono text-[0.76rem] text-muted">{p.email}</div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">{sp ? `${sp.branch} · ${sp.year_of_study}` : "—"}</td>
+                      <td className="px-3 py-2">{sp?.project_title || "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono tabular">
+                        {c ? `${c.upcoming} upcoming · ${c.done} done` : "0"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono tabular"><LocalTime iso={p.created_at} mode="day" /></td>
                     </tr>
                   );
                 })}

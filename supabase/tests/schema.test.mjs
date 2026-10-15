@@ -131,5 +131,19 @@ await expectOk("cancelling inside 48 hours does not reopen the slot", async () =
   if (!r.rows[0].is_booked) throw new Error("slot reopened inside the 48-hour window");
 });
 
+// student allow-list
+await expectErr("non-IITG email still can't become a student", () => stud(U.outsider), /iitg\.ac\.in/);
+await expectOk("allow-listed email can become a student", async () => {
+  await db.query(`insert into public.student_email_allowlist (email, note) values ('someone@gmail.com', 'test')`);
+  await stud(U.outsider);
+  const r = await db.query(`select role, status from public.profiles where id=$1`, [U.outsider]);
+  if (r.rows[0].role !== "student" || r.rows[0].status !== "approved") throw new Error(JSON.stringify(r.rows));
+});
+await expectOk("is_student_email is case-insensitive and callable before sign-in", async () => {
+  const r = await as("", `select public.is_student_email('SomeOne@Gmail.com ') a, public.is_student_email('x@iitg.ac.in') b, public.is_student_email('x@gmail.com') c`, [], "anon");
+  if (!(r.rows[0].a && r.rows[0].b && !r.rows[0].c)) throw new Error(JSON.stringify(r.rows));
+});
+await expectErr("clients can't read the allow-list", () => as(U.stu1, `select * from public.student_email_allowlist`), /permission denied/);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

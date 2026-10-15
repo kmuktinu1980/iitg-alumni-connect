@@ -25,7 +25,7 @@ A mentoring site for IIT Guwahati. Alumni volunteer their skills and open slots 
 
 ```
 supabase/migrations/                Schema, security rules and all write logic
-supabase/tests/schema.test.mjs      30 tests run against an in-memory Postgres
+supabase/tests/schema.test.mjs      34 tests run against an in-memory Postgres
 src/app/                            Pages: /, /login, /onboarding, /pending, /find,
                                     /sessions, /availability, /profile, /admin
 src/app/actions.ts                  Server actions (each calls a database function)
@@ -45,7 +45,7 @@ All writes go through `SECURITY DEFINER` database functions that check who is ca
 ### 1. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com) (the free tier is enough for a pilot). Pick a region near India, such as Mumbai.
-2. Open **SQL Editor** and run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_notice_and_brief_check.sql`, `0003_advisor_tidy.sql`).
+2. Open **SQL Editor** and run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_notice_and_brief_check.sql`, `0003_advisor_tidy.sql`, `0004_student_allowlist.sql`).
 3. **Authentication → URL Configuration**
    - Site URL: your production URL, e.g. `https://iitg-alumni-connect.vercel.app`
    - Redirect URLs: add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`
@@ -117,6 +117,10 @@ npm run typecheck
 Without `RESEND_API_KEY`, emails are logged to the console instead of sent. Without `ANTHROPIC_API_KEY`, matching uses keyword overlap.
 
 ## Things to know
+
+- **Letting a non-IITG email register as a student** (testing, or a student whose institute email isn't working): in the SQL Editor run
+  `insert into public.student_email_allowlist (email, note) values ('name@gmail.com', 'why');`
+  and remove it later with `delete from public.student_email_allowlist where email = 'name@gmail.com';`
 
 - **Student email domain** is `iitg.ac.in`, set in `public.student_email_domain()` in the migration and `STUDENT_EMAIL_DOMAIN` in `src/lib/constants.ts`. Change both if needed.
 - **Institute mail filters** sometimes delay sign-in links to `@iitg.ac.in`. If students report missing links, ask IT to allow your sending domain.

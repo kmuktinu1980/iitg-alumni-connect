@@ -29,7 +29,8 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
   if (v.profile.role && v.profile.status !== "onboarding") redirect(homeFor(v.profile));
 
   const email = v.user.email ?? "";
-  const canBeStudent = isStudentEmail(email);
+  const canBeStudent =
+    isStudentEmail(email) || !!(await v.supabase.rpc("is_student_email", { p_email: email })).data;
   const sp = await searchParams;
   const as = sp.as === "student" || sp.as === "alumni" ? sp.as : canBeStudent ? "student" : "alumni";
   const metaName = String(v.user.user_metadata?.full_name ?? v.user.user_metadata?.name ?? "");

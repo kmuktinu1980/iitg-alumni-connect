@@ -20,12 +20,24 @@ export function LoginPanel({ initial }: { initial: Who }) {
     setErr("");
     const addr = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) return setErr("Enter a valid email address.");
-    if (who === "student" && !isStudentEmail(addr))
-      return setErr(`Use your @${STUDENT_EMAIL_DOMAIN} email. Alumni can sign in from the Alumni tab.`);
     setBusy(true);
-    const { error } = await createClient().auth.signInWithOtp({ email: addr, options: { emailRedirectTo: redirectTo() } });
+    const supabase = createClient();
+    if (who === "student" && !isStudentEmail(addr)) {
+      // Not an institute address: allowed only if an organizer has allow-listed it.
+      const { data: allowed } = await supabase.rpc("is_student_email", { p_email: addr });
+      if (!allowed) {
+        setBusy(false);
+        return setErr(`Use your @${STUDENT_EMAIL_DOMAIN} email. Alumni can sign in from the Alumni tab.`);
+      }
+    }
+    const { error } = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: redirectTo() } });
     setBusy(false);
-    if (error) return setErr(error.message.includes("rate") ? "Too many requests. Wait a minute and try again." : "Couldn't send the link. Try again.");
+    if (error)
+      return setErr(
+        /rate|too many|security purposes/i.test(error.message)
+          ? "Sign-in emails are limited for now. Wait a few minutes and try again, or use a link you've already received."
+          : "Couldn't send the link. Try again.",
+      );
     setSentTo(addr);
   }
 

@@ -7,3 +7,6 @@ out
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+tests/stack/.bin/
+tests/stack/logs/
+tests/stack/.env.test

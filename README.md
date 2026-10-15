@@ -45,7 +45,7 @@ All writes go through `SECURITY DEFINER` database functions that check who is ca
 ### 1. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com) (the free tier is enough for a pilot). Pick a region near India, such as Mumbai.
-2. Open **SQL Editor** and run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_notice_and_brief_check.sql`, `0003_advisor_tidy.sql`, `0004_student_allowlist.sql`).
+2. Open **SQL Editor** and run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_notice_and_brief_check.sql`, `0003_advisor_tidy.sql`, `0004_student_allowlist.sql`, `0005_admin_stats.sql`).
 3. **Authentication → URL Configuration**
    - Site URL: your production URL, e.g. `https://iitg-alumni-connect.vercel.app`
    - Redirect URLs: add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`
@@ -103,6 +103,33 @@ update public.profiles set is_admin = true where email = 'you@example.com';
 Reload the site and the **Organizer** tab appears. New alumni wait there for approval.
 
 ---
+
+## Tests
+
+| Command | What it covers | Needs |
+|---|---|---|
+| `npm run test:db` | Booking, privacy and analytics rules in an in-memory Postgres (37 tests) | Nothing |
+| `npm run test:api` | The five steel threads over the real Supabase API, as real signed-in users (24 tests) | A Supabase API to point at |
+
+**The API steel threads** (`tests/api/steel-threads.test.ts`):
+
+1. **Alumni registration:** sign up → profile → pending → only an organizer can approve → listed for students.
+2. **Student sign-up:** `@iitg.ac.in` approved instantly; other emails refused; allow-listed emails accepted; students never see emails or meeting links.
+3. **Student booking:** slots inside 48 hours skipped; one-line briefs refused; one booking per slot; one upcoming session per mentor; alumni can't book.
+4. **Calendars:** the session appears for both people and nobody else; the mentor sees the project brief; the calendar invite and Google Calendar link have the right time, people and meeting link; cancelling removes it and reopens the slot.
+5. **Admin analytics:** organizers only; a session counts as completed once its time passes (time-travelled in the test); cancelled sessions never count as completed.
+
+**Run them locally** against a throwaway Supabase built from the migrations (needs Postgres 16 on port 54322):
+
+```bash
+bash tests/stack/start.sh                      # Auth + PostgREST + migrations, about 5 seconds
+set -a && . tests/stack/.env.test && set +a
+npm run test:api
+```
+
+**Or against a Supabase project** (ideally a separate test project): set `TEST_SUPABASE_URL`, `TEST_SUPABASE_ANON_KEY` and `TEST_SUPABASE_SERVICE_ROLE_KEY`. Each run creates throwaway accounts tagged with a run id (no emails are sent) and deletes everything it created.
+
+**CI:** `.github/workflows/tests.yml` runs the type-check, database tests and API steel threads on every push and pull request, against a fresh Postgres each time.
 
 ## Local development
 

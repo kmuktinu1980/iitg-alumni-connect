@@ -8,6 +8,23 @@ import { StatusButtons } from "./StatusButtons";
 
 export const metadata: Metadata = { title: "Organizer" };
 
+type AdminStats = {
+  alumni_approved: number;
+  alumni_pending: number;
+  students: number;
+  open_slots: number;
+  upcoming_sessions: number;
+  completed_sessions: number;
+  cancelled_sessions: number;
+  completed_minutes: number;
+  match_searches: number;
+  completed_by_mentor: { alumni_id: string; name: string; sessions: number }[];
+  recent_completed: {
+    id: string; starts_at: string; duration_min: number; topic: string;
+    alumni_id: string; alumni_name: string; student_id: string; student_name: string;
+  }[];
+};
+
 type AlumniRow = {
   user_id: string;
   grad_year: number;
@@ -23,17 +40,20 @@ type AlumniRow = {
 };
 
 export default async function AdminPage() {
-  await requireViewer({ admin: true });
+  const v = await requireViewer({ admin: true });
   const db = createAdminClient();
   const nowIso = new Date().toISOString();
 
-  const [{ data: people }, { data: alumni }, { data: slots }, { data: bookings }, { count: matchCount }] = await Promise.all([
+  const [{ data: people }, { data: alumni }, { data: slots }, { data: bookings }, { data: statsData, error: statsError }] = await Promise.all([
     db.from("profiles").select("id, full_name, email, role, status, created_at").not("role", "is", null),
     db.from("alumni_profiles").select("user_id, grad_year, degree, branch, job_title, organization, city, linkedin_url, skills, bio, visible"),
     db.from("slots").select("alumni_id").eq("is_booked", false).gt("starts_at", minNoticeCutoff().toISOString()),
     db.from("bookings").select("id, alumni_id, student_id, starts_at, topic, status").order("starts_at"),
-    db.from("match_requests").select("id", { count: "exact", head: true }),
+    // Analytics come from the admin_stats() API, called as the signed-in organizer.
+    v.supabase.rpc("admin_stats"),
   ]);
+  if (statsError) throw statsError;
+  const st = statsData as AdminStats;
 
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
   const alumniById = new Map(((alumni ?? []) as AlumniRow[]).map((a) => [a.user_id, a]));
@@ -41,7 +61,6 @@ export default async function AdminPage() {
   for (const s of slots ?? []) openByAlumni.set(s.alumni_id, (openByAlumni.get(s.alumni_id) ?? 0) + 1);
   const all = bookings ?? [];
   const upcoming = all.filter((b) => b.status === "booked" && b.starts_at > nowIso);
-  const done = all.filter((b) => b.status === "booked" && b.starts_at <= nowIso);
   const sessionsBy = new Map<string, number>();
   for (const b of all) if (b.status === "booked") sessionsBy.set(b.alumni_id, (sessionsBy.get(b.alumni_id) ?? 0) + 1);
 
@@ -51,13 +70,14 @@ export default async function AdminPage() {
   const students = (people ?? []).filter((p) => p.role === "student");
 
   const stats: [string, number][] = [
-    ["Alumni approved", alumniPeople.filter((p) => p.status === "approved").length],
-    ["Awaiting review", pending.length],
-    ["Students", students.length],
-    ["Open slots", [...openByAlumni.values()].reduce((a, b) => a + b, 0)],
-    ["Upcoming sessions", upcoming.length],
-    ["Completed", done.length],
-    ["Match searches", matchCount ?? 0],
+    ["Alumni approved", st.alumni_approved],
+    ["Awaiting review", st.alumni_pending],
+    ["Students", st.students],
+    ["Open slots", st.open_slots],
+    ["Upcoming sessions", st.upcoming_sessions],
+    ["Completed sessions", st.completed_sessions],
+    ["Mentoring hours", Math.round((st.completed_minutes / 60) * 10) / 10],
+    ["Match searches", st.match_searches],
   ];
 
   return (
@@ -131,6 +151,36 @@ export default async function AdminPage() {
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="text-[1.25rem] font-bold">Completed sessions</h2>
+        {st.recent_completed.length === 0 ? (
+          <p className="text-muted">None yet. Sessions show up here once their end time has passed.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-[10px] border border-line bg-surface">
+            <table className="w-full border-collapse text-[0.88rem]">
+              <thead>
+                <tr>{["When", "Mentor", "Student", "Topic"].map((h) => <th key={h} className="label-cap border-b border-line px-3 py-2 text-left">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {st.recent_completed.map((b) => (
+                  <tr key={b.id} className="border-b border-line last:border-0 align-top">
+                    <td className="whitespace-nowrap px-3 py-2 font-mono tabular"><LocalTime iso={b.starts_at} /></td>
+                    <td className="px-3 py-2">{b.alumni_name || "—"}</td>
+                    <td className="px-3 py-2">{b.student_name || "—"}</td>
+                    <td className="px-3 py-2">{b.topic}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {st.completed_by_mentor.length > 0 && (
+          <p className="text-[0.86rem] text-muted">
+            Most sessions: {st.completed_by_mentor.slice(0, 5).map((m) => `${m.name} (${m.sessions})`).join(", ")}
+          </p>
         )}
       </section>
 

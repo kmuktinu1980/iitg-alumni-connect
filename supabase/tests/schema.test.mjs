@@ -145,5 +145,25 @@ await expectOk("is_student_email is case-insensitive and callable before sign-in
 });
 await expectErr("clients can't read the allow-list", () => as(U.stu1, `select * from public.student_email_allowlist`), /permission denied/);
 
+// admin analytics
+await expectErr("non-organizers can't read analytics", () => as(U.stu1, `select public.admin_stats()`), /organizers/);
+await expectOk("finished session appears in analytics", async () => {
+  const before = (await as(U.admin, `select public.admin_stats() s`)).rows[0].s;
+  // A booked session whose end time has passed (simulates the session date arriving).
+  const sid = (await db.query(`insert into public.slots (alumni_id, starts_at, duration_min, is_booked) values ($1, now() - interval '2 hours', 45, true) returning id`, [U.alum])).rows[0].id;
+  const bid = (await db.query(`insert into public.bookings (slot_id, alumni_id, student_id, starts_at, duration_min, topic) values ($1, $2, $3, now() - interval '2 hours', 45, $4) returning id`, [sid, U.alum, U.stu2, T])).rows[0].id;
+  const after = (await as(U.admin, `select public.admin_stats() s`)).rows[0].s;
+  if (after.completed_sessions !== before.completed_sessions + 1) throw new Error(`completed ${before.completed_sessions} -> ${after.completed_sessions}`);
+  if (after.completed_minutes !== before.completed_minutes + 45) throw new Error(`minutes ${before.completed_minutes} -> ${after.completed_minutes}`);
+  if (!after.recent_completed.some((r) => r.id === bid && r.alumni_name === "Asha Alum")) throw new Error("not in recent_completed");
+  if (!after.completed_by_mentor.some((m) => m.alumni_id === U.alum)) throw new Error("not in completed_by_mentor");
+});
+await expectOk("upcoming and cancelled sessions are not counted as completed", async () => {
+  const s = (await as(U.admin, `select public.admin_stats() s`)).rows[0].s;
+  const r = await db.query(`select count(*)::int n from public.bookings where status='booked' and starts_at + make_interval(mins => duration_min) <= now()`);
+  if (s.completed_sessions !== r.rows[0].n) throw new Error(`${s.completed_sessions} vs ${r.rows[0].n}`);
+  if (s.cancelled_sessions < 1) throw new Error("expected the earlier cancelled booking to be counted as cancelled");
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

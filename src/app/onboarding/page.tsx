@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { INVITE_COOKIE } from "@/lib/invite";
 import type { Metadata } from "next";
 import { getViewer, homeFor } from "@/lib/viewer";
 import { STUDENT_EMAIL_DOMAIN, isStudentEmail } from "@/lib/constants";
@@ -8,10 +11,11 @@ import { AlumniProfileEditor } from "@/components/AlumniProfileEditor";
 
 export const metadata: Metadata = { title: "Join" };
 
-function Stepper({ active }: { active: 1 | 2 }) {
+function Stepper({ active, invited }: { active: 1 | 2; invited: boolean }) {
+  const steps = invited ? ["Your profile", "Open slots"] : ["Your profile", "Organizer approval", "Open slots"];
   return (
     <ol className="flex flex-wrap gap-x-5 gap-y-2 text-[0.86rem] text-muted" aria-label="Alumni setup">
-      {["Your profile", "Organizer approval", "Open slots"].map((l, i) => (
+      {steps.map((l, i) => (
         <li key={l} className={`inline-flex items-center gap-2 ${i + 1 === active ? "font-semibold text-ink" : ""}`}
           aria-current={i + 1 === active ? "step" : undefined}>
           <span className={`grid h-[22px] w-[22px] place-items-center rounded-full border font-mono text-[0.76rem] ${
@@ -33,6 +37,11 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
     isStudentEmail(email) || !!(await v.supabase.rpc("is_student_email", { p_email: email })).data;
   const sp = await searchParams;
   const as = sp.as === "student" || sp.as === "alumni" ? sp.as : canBeStudent ? "student" : "alumni";
+  const inviteCode = (await cookies()).get(INVITE_COOKIE)?.value;
+  const invited =
+    as === "alumni" &&
+    (!!(inviteCode && (await v.supabase.rpc("invite_link_ok", { p_code: inviteCode })).data) ||
+      !!(await createAdminClient().from("alumni_invites").select("email").eq("email", email.toLowerCase()).maybeSingle()).data);
   const metaName = String(v.user.user_metadata?.full_name ?? v.user.user_metadata?.name ?? "");
 
   return (
@@ -57,10 +66,13 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
         </>
       ) : (
         <>
-          <Stepper active={1} />
+          <Stepper active={1} invited={invited} />
           <p className="lede">
-            Start by filling it from your LinkedIn, then check the details. Students see this when they're matched with
-            you. An organizer reviews new profiles, then you open slots on your calendar.
+            Describe yourself in a few lines and we'll fill in the form, then check the details. Students see this when
+            they're matched with you.{" "}
+            {invited
+              ? "You've been invited, so you can open slots as soon as you save."
+              : "An organizer reviews new profiles, usually within a day, then you open slots on your calendar."}
           </p>
           <AlumniProfileEditor
             isNew

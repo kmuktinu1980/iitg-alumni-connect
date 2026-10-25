@@ -5,6 +5,7 @@ import { batchLabel } from "@/lib/time";
 import { minNoticeCutoff } from "@/lib/constants";
 import { LocalTime } from "@/components/LocalTime";
 import { StatusButtons } from "./StatusButtons";
+import { InviteManager, type InviteRow, type LinkRow } from "./InviteManager";
 
 export const metadata: Metadata = { title: "Organizer" };
 
@@ -54,6 +55,10 @@ export default async function AdminPage() {
     v.supabase.rpc("admin_stats"),
   ]);
   if (statsError) throw statsError;
+  const [{ data: inviteRows }, { data: linkRows }] = await Promise.all([
+    db.from("alumni_invites").select("email, note, created_at").order("created_at", { ascending: false }),
+    db.from("invite_links").select("code, label, expires_at, max_uses, uses, revoked, created_at").order("created_at", { ascending: false }).limit(20),
+  ]);
   const st = statsData as AdminStats;
 
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
@@ -78,6 +83,14 @@ export default async function AdminPage() {
   const pending = alumniPeople.filter((p) => p.status === "pending").sort((a, b) => a.created_at.localeCompare(b.created_at));
   const listed = alumniPeople.filter((p) => p.status !== "pending").sort((a, b) => (alumniById.get(a.id)?.grad_year ?? 0) - (alumniById.get(b.id)?.grad_year ?? 0));
   const students = (people ?? []).filter((p) => p.role === "student").sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+  const byEmail = new Map((people ?? []).map((p) => [String(p.email ?? "").toLowerCase(), p]));
+  const statusWord = (s: string) => (s === "approved" ? "Approved" : s === "pending" ? "Awaiting review" : s === "rejected" ? "Not approved" : "Signing up");
+  const invites: InviteRow[] = (inviteRows ?? []).map((i) => {
+    const p = byEmail.get(i.email);
+    return { email: i.email, note: i.note, joined: p ? `${p.full_name || "Signed up"} · ${statusWord(p.status)}` : null };
+  });
+  const site = (process.env.NEXT_PUBLIC_SITE_URL || "https://iitg-alumni-connect.vercel.app").replace(/\/$/, "");
 
   const stats: [string, number][] = [
     ["Alumni approved", st.alumni_approved],
@@ -137,6 +150,11 @@ export default async function AdminPage() {
             );
           })
         )}
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="text-[1.25rem] font-bold">Invite mentors</h2>
+        <InviteManager site={site} invites={invites} links={(linkRows ?? []) as LinkRow[]} />
       </section>
 
       <section className="grid gap-3">

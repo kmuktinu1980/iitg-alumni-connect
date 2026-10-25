@@ -12,6 +12,7 @@ export function LoginPanel({ initial }: { initial: Who }) {
   const [sentTo, setSentTo] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState("");
 
   const redirectTo = () => `${window.location.origin}/auth/callback`;
 
@@ -36,9 +37,27 @@ export function LoginPanel({ initial }: { initial: Who }) {
       return setErr(
         /rate|too many|security purposes/i.test(error.message)
           ? "Sign-in emails are limited for now. Wait a few minutes and try again, or use a link you've already received."
-          : "Couldn't send the link. Try again.",
+          : "Couldn't send the email. Try again.",
       );
     setSentTo(addr);
+  }
+
+  async function verifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    setErr("");
+    const token = code.replace(/\D/g, "");
+    if (token.length < 6) return setErr("Enter the code from the email.");
+    setBusy(true);
+    const { error } = await createClient().auth.verifyOtp({ email: sentTo, token, type: "email" });
+    if (error) {
+      setBusy(false);
+      return setErr(
+        /expired|invalid/i.test(error.message)
+          ? "That code didn't work. Check it, or use the newest email if you requested more than one. Codes expire after an hour."
+          : "Couldn't sign you in. Try again.",
+      );
+    }
+    window.location.assign("/"); // "/" sends you to the right place
   }
 
   if (sentTo)
@@ -46,12 +65,36 @@ export function LoginPanel({ initial }: { initial: Who }) {
       <div className="panel">
         <h2 className="text-lg font-bold">Check your inbox</h2>
         <p>
-          We sent a sign-in link to <b className="font-mono text-[0.92rem]">{sentTo}</b>. Open it in this browser. It
-          expires in an hour.
+          We emailed <b className="font-mono text-[0.92rem]">{sentTo}</b>. Type the code from that email here. You can
+          also tap the link in it if you're on this device.
         </p>
-        <button className="linkbtn justify-self-start" type="button" onClick={() => setSentTo("")}>
-          Use a different email
-        </button>
+        <form onSubmit={verifyCode} className="grid gap-3" noValidate>
+          <div className="field max-w-[14rem]">
+            <label htmlFor="otp" className="field-label">Sign-in code</label>
+            <input
+              id="otp"
+              className="input tabular text-center text-[1.25rem] tracking-[0.3em]"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]*"
+              maxLength={10}
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="123456"
+            />
+          </div>
+          {err && <p role="alert" className="err">{err}</p>}
+          <button className="btn justify-self-start" type="submit" disabled={busy}>
+            {busy ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+        <p className="text-[0.86rem] text-muted">
+          No email after a minute? Check spam or promotions.{" "}
+          <button className="linkbtn" type="button" onClick={() => { setSentTo(""); setCode(""); setErr(""); }}>
+            Use a different email
+          </button>
+        </p>
       </div>
     );
 
@@ -74,7 +117,8 @@ export function LoginPanel({ initial }: { initial: Who }) {
 
       {who === "alumni" && (
         <p className="text-[0.9rem] text-muted">
-          Use any email you check. After signing in you can fill your profile from your LinkedIn in a few seconds.
+          Use any email you check. We'll email you a code, then you describe yourself in a few lines (typing or
+          dictating) and we fill in your profile.
         </p>
       )}
 
@@ -96,7 +140,7 @@ export function LoginPanel({ initial }: { initial: Who }) {
         </div>
         {err && <p role="alert" className="err">{err}</p>}
         <button className="btn justify-self-start" type="submit" disabled={busy}>
-          {busy ? "Sending…" : "Email me a sign-in link"}
+          {busy ? "Sending…" : "Email me a sign-in code"}
         </button>
       </form>
     </div>

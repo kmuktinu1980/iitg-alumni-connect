@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireViewer } from "@/lib/viewer";
 import { SlotManager, type SlotRow } from "./SlotManager";
+import { SlotSetup } from "./SlotSetup";
 
 export const metadata: Metadata = { title: "My availability" };
 
@@ -8,7 +9,7 @@ export default async function AvailabilityPage() {
   const v = await requireViewer({ role: "alumni" });
   const nowIso = new Date().toISOString();
 
-  const [{ data: slots }, { data: bookings }, { data: me }] = await Promise.all([
+  const [{ data: slots }, { data: bookings }, { data: me }, { data: missing }] = await Promise.all([
     v.supabase
       .from("slots")
       .select("id, starts_at, duration_min, is_booked")
@@ -21,8 +22,17 @@ export default async function AvailabilityPage() {
       .eq("alumni_id", v.user.id)
       .eq("status", "booked")
       .gt("starts_at", nowIso),
-    v.supabase.from("alumni_profiles").select("visible").eq("user_id", v.user.id).single(),
+    v.supabase.from("alumni_profiles").select("visible, skills").eq("user_id", v.user.id).single(),
+    v.supabase.rpc("slot_setup_missing"),
   ]);
+  const need = new Set((missing as string[] | null) ?? []);
+  if (need.size)
+    return (
+      <section className="grid gap-3.5">
+        <h1 className="text-[1.6rem] font-bold">My availability</h1>
+        <SlotSetup needLink={need.has("meeting_link")} needSkills={need.has("skills")} skills={(me?.skills as string[] | null) ?? []} />
+      </section>
+    );
 
   const studentIds = [...new Set((bookings ?? []).map((b) => b.student_id))];
   const [{ data: names }, { data: projects }] = studentIds.length

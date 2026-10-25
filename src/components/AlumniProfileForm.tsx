@@ -68,6 +68,26 @@ export function AlumniProfileForm({ initial, isNew }: { initial: AlumniInitial; 
   }
 
   const areas = new Set(initial.adviceAreas);
+  const later = (
+    <>
+      <Field id="meetingLink" label="Your meeting link"
+        hint="Only students who book you see this. A personal Zoom or Google Meet room you reuse works best.">
+        <input className="input" id="meetingLink" name="meetingLink" type="url" defaultValue={initial.meetingLink}
+          placeholder="https://meet.google.com/… or https://zoom.us/j/…" />
+      </Field>
+      <Field id="skills" label="Skills and expertise" hint="Separate with commas. Matching weighs these most.">
+        <input className="input" id="skills" name="skills" defaultValue={initial.skills.join(", ")}
+          placeholder="Embedded systems, IoT, product strategy, fundraising" />
+      </Field>
+      <Field id="city" label="City">
+        <input className="input" id="city" name="city" defaultValue={initial.city} placeholder="Bengaluru" />
+      </Field>
+      <label className="check-chip justify-self-start">
+        <input type="checkbox" name="visible" defaultChecked={initial.visible} className="accent-river" />
+        Show me to students
+      </label>
+    </>
+  );
   return (
     <form className="panel" onSubmit={submit} noValidate>
       <div className="grid gap-3.5 sm:grid-cols-2">
@@ -95,23 +115,11 @@ export function AlumniProfileForm({ initial, isNew }: { initial: AlumniInitial; 
         <Field id="organization" label="Organization">
           <input className="input" id="organization" name="organization" defaultValue={initial.organization} placeholder="Company, lab or startup" />
         </Field>
-        <Field id="city" label="City">
-          <input className="input" id="city" name="city" defaultValue={initial.city} placeholder="Bengaluru" />
-        </Field>
         <Field id="linkedinUrl" label="LinkedIn (optional)">
           <input className="input" id="linkedinUrl" name="linkedinUrl" type="url" defaultValue={initial.linkedinUrl}
             placeholder="https://www.linkedin.com/in/…" />
         </Field>
       </div>
-      <Field id="meetingLink" label="Your meeting link"
-        hint="Only students who book you see this. A personal Zoom or Google Meet room you reuse works best.">
-        <input className="input" id="meetingLink" name="meetingLink" type="url" defaultValue={initial.meetingLink}
-          placeholder="https://meet.google.com/… or https://zoom.us/j/…" />
-      </Field>
-      <Field id="skills" label="Skills and expertise" hint="Separate with commas. Matching weighs these most.">
-        <input className="input" id="skills" name="skills" defaultValue={initial.skills.join(", ")}
-          placeholder="Embedded systems, IoT, product strategy, fundraising" />
-      </Field>
       <fieldset className="field gap-3">
         <legend className="field-label mb-1">Happy to advise on</legend>
         <span className="hint -mt-1">Pick the areas where you have hands-on experience. Matching weighs these with your skills.</span>
@@ -136,14 +144,23 @@ export function AlumniProfileForm({ initial, isNew }: { initial: AlumniInitial; 
         <textarea className="input" id="bio" name="bio" defaultValue={initial.bio}
           placeholder="Two or three lines on your path since IITG and what you've built." />
       </Field>
-      <label className="check-chip justify-self-start">
-        <input type="checkbox" name="visible" defaultChecked={initial.visible} className="accent-river" />
-        Show me to students
-      </label>
+      {isNew ? (
+        <details className="grid gap-3.5 rounded-lg border border-line px-4 py-3">
+          <summary className="cursor-pointer text-[0.92rem] font-semibold">
+            Optional for now: meeting link, skills, city
+            <span className="block text-[0.84rem] font-normal text-muted">
+              {initial.skills.length ? `${initial.skills.length} skills filled in. ` : ""}You'll be asked for the meeting link and skills before you open slots.
+            </span>
+          </summary>
+          <div className="mt-3 grid gap-3.5">{later}</div>
+        </details>
+      ) : (
+        later
+      )}
       {err && <FormError message={err} />}
       <div className="flex flex-wrap items-center gap-3">
         <button className="btn" type="submit" disabled={pending}>
-          {pending ? "Saving…" : isNew ? "Submit for approval" : "Save profile"}
+          {pending ? "Saving…" : isNew ? "Save and continue" : "Save profile"}
         </button>
         {saved && <span role="status" className="text-[0.88rem] text-ok">Saved.</span>}
       </div>

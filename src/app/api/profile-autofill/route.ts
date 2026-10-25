@@ -20,6 +20,7 @@ export async function POST(req: Request) {
 
   const file = form.get("pdf");
   const text = String(form.get("text") ?? "").trim();
+  const about = form.get("source") === "about";
   let pdf: Buffer | undefined;
   if (file && typeof file === "object" && "arrayBuffer" in file && file.size > 0) {
     const name = (file as File).name?.toLowerCase() ?? "";
@@ -29,8 +30,12 @@ export async function POST(req: Request) {
     if (pdf.subarray(0, 5).toString() !== "%PDF-")
       return NextResponse.json({ error: "That file isn't a readable PDF." }, { status: 400 });
   }
-  if (!pdf && text.length < 80)
-    return NextResponse.json({ error: "Upload your LinkedIn PDF, or paste more of your profile (experience and education)." }, { status: 400 });
+  if (!pdf && text.length < (about ? 60 : 80))
+    return NextResponse.json({
+      error: about
+        ? "Add a little more: your IITG batch and branch, what you do now, and what students could ask you about."
+        : "Upload your LinkedIn PDF, or paste more of your profile (experience and education).",
+    }, { status: 400 });
   if (text.length > MAX_PROFILE_TEXT)
     return NextResponse.json({ error: "That's a lot of text. Paste just your About, Experience and Education sections." }, { status: 400 });
 
@@ -47,10 +52,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "You've used autofill several times today. Fill in the form directly, or try again tomorrow." }, { status: 429 });
 
   try {
-    const fields = await extractProfile({ pdf, text: text || undefined });
+    const source = pdf ? "linkedin-pdf" : about ? "about" : "linkedin-text";
+    const fields = await extractProfile({ pdf, text: text || undefined, source });
     await admin.from("match_requests").insert({
       student_id: v.user.id,
-      query: { source: pdf ? "pdf" : "text" },
+      query: { source },
       results: { iitgFound: fields.iitgFound, filled: Object.entries(fields).filter(([, x]) => x && (!Array.isArray(x) || x.length)).length },
       method: "autofill",
     });

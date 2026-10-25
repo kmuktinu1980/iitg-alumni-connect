@@ -165,5 +165,70 @@ await expectOk("upcoming and cancelled sessions are not counted as completed", a
   if (s.cancelled_sessions < 1) throw new Error("expected the earlier cancelled booking to be counted as cancelled");
 });
 
+// quick sign-up and invites
+const Q = {
+  quick: "00000000-0000-0000-0000-0000000000b1",
+  invited: "00000000-0000-0000-0000-0000000000b2",
+  linked: "00000000-0000-0000-0000-0000000000b3",
+  linked2: "00000000-0000-0000-0000-0000000000b4",
+  late: "00000000-0000-0000-0000-0000000000b5",
+};
+await db.exec(`insert into auth.users (id, email) values
+  ('${Q.quick}', 'quick@gmail.com'), ('${Q.invited}', 'Invited@Gmail.com'), ('${Q.linked}', 'linked@gmail.com'),
+  ('${Q.linked2}', 'linked2@gmail.com'), ('${Q.late}', 'late@gmail.com')`);
+const quickSave = (u, invite = null) => as(u,
+  `select public.save_alumni_profile('Quick Alum', 2010, 'B.Tech', 'CSE', 'PM', 'Acme', '', 'UTC', '', '', '{}'::text[], array['Research'], '', true, $1) as s`, [invite]);
+
+await expectOk("profile saves without meeting link or skills (pending)", async () => {
+  const r = await quickSave(Q.quick); if (r.rows[0].s !== "pending") throw new Error(r.rows[0].s);
+});
+await expectOk("slot setup reports what's missing", async () => {
+  const r = await as(Q.quick, `select public.slot_setup_missing() m`);
+  if (JSON.stringify(r.rows[0].m) !== JSON.stringify(["meeting_link", "skills"])) throw new Error(JSON.stringify(r.rows[0].m));
+});
+await expectErr("non-organizers can't invite", () => as(U.stu1, `select public.admin_add_invites(array['x@gmail.com'])`), /Organizers/);
+await expectErr("clients can't read invites", () => as(U.admin, `select * from public.alumni_invites`), /permission denied/);
+await expectOk("invited email is approved on sign-up", async () => {
+  await as(U.admin, `select public.admin_add_invites(array['invited@gmail.com', 'not an email'], 'Sail')`);
+  const r = await quickSave(Q.invited); if (r.rows[0].s !== "approved") throw new Error(r.rows[0].s);
+  const p = await db.query(`select approved_via from public.profiles where id=$1`, [Q.invited]);
+  if (p.rows[0].approved_via !== "invite:invited@gmail.com") throw new Error(p.rows[0].approved_via);
+});
+await expectOk("inviting someone already pending approves them", async () => {
+  await as(U.admin, `select public.admin_add_invites(array['QUICK@gmail.com'])`);
+  const p = await db.query(`select status from public.profiles where id=$1`, [Q.quick]);
+  if (p.rows[0].status !== "approved") throw new Error(p.rows[0].status);
+});
+await expectErr("approved mentor without meeting link can't open slots",
+  () => as(Q.quick, `select public.add_slots(array[now() + interval '5 days'], 30)`), /meeting link/);
+await expectOk("after slot setup, slots open", async () => {
+  await as(Q.quick, `select public.save_slot_setup('https://meet.google.com/q', array['Product'])`);
+  const r = await as(Q.quick, `select public.add_slots(array[now() + interval '5 days'], 30) n`);
+  if (r.rows[0].n !== 1) throw new Error(String(r.rows[0].n));
+});
+await expectErr("meeting link can't be cleared while slots are open",
+  () => as(Q.quick, `select public.save_alumni_profile('Quick Alum', 2010, 'B.Tech', 'CSE', 'PM', 'Acme', '', 'UTC', '', '', array['Product'], array['Research'], '', true)`), /meeting link/);
+await expectOk("invite link approves up to its limit, then falls back to pending", async () => {
+  const code = (await as(U.admin, `select public.admin_create_invite_link('Sail group', 14, 1) c`)).rows[0].c;
+  if (!/^[a-z0-9]{12}$/.test(code)) throw new Error("bad code " + code);
+  const ok = (await as(Q.linked, `select public.invite_link_ok($1) ok`, [code], "anon")).rows[0].ok;
+  if (!ok) throw new Error("link not ok");
+  const a = await quickSave(Q.linked, code); if (a.rows[0].s !== "approved") throw new Error("first " + a.rows[0].s);
+  const b = await quickSave(Q.linked2, code); if (b.rows[0].s !== "pending") throw new Error("second " + b.rows[0].s);
+});
+await expectOk("revoked or bogus invite links don't approve", async () => {
+  const code = (await as(U.admin, `select public.admin_create_invite_link('x', 1, 10) c`)).rows[0].c;
+  await as(U.admin, `select public.admin_revoke_invite_link($1)`, [code]);
+  const r = await quickSave(Q.late, code); if (r.rows[0].s !== "pending") throw new Error(r.rows[0].s);
+  const bogus = (await as(Q.late, `select public.invite_link_ok('nope') ok`)).rows[0].ok; if (bogus) throw new Error("bogus ok");
+});
+await expectOk("an invite doesn't re-approve a rejected mentor", async () => {
+  await as(U.admin, `select public.admin_set_status($1, 'rejected')`, [Q.late]);
+  await as(U.admin, `select public.admin_add_invites(array['late@gmail.com'])`);
+  await quickSave(Q.late);
+  const p = await db.query(`select status from public.profiles where id=$1`, [Q.late]);
+  if (p.rows[0].status !== "rejected") throw new Error(p.rows[0].status);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

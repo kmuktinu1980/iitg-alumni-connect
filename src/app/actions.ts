@@ -2,12 +2,14 @@
 
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { ADVICE_AREAS, BRANCHES, DEGREES, DURATIONS, YEARS } from "@/lib/constants";
 import { sendApprovalEmail, sendBookingEmails, sendCancellationEmails } from "@/lib/email";
 import { checkBrief } from "@/lib/brief-check";
 import { MIN_BRIEF_CHARS } from "@/lib/brief-rules";
+import { INVITE_COOKIE } from "@/lib/invite";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -73,8 +75,8 @@ const alumniSchema = z.object({
   city: z.string().trim().max(80),
   timezone: z.string().trim().max(64),
   linkedinUrl: z.preprocess(withHttps, z.union([z.literal(""), link("Your LinkedIn URL")])),
-  meetingLink: link("Your meeting link"),
-  skills: z.array(z.string().trim().min(1).max(40)).min(1, "Add at least one skill.").max(20),
+  meetingLink: z.preprocess(withHttps, z.union([z.literal(""), link("Your meeting link")])),
+  skills: z.array(z.string().trim().min(1).max(40)).max(20),
   adviceAreas: z.array(z.enum(ADVICE_AREAS)).min(1, "Pick at least one area you can advise on."),
   bio: z.string().trim().max(1200),
   visible: z.boolean(),
@@ -85,6 +87,8 @@ export async function saveAlumniProfile(input: z.input<typeof alumniSchema>): Pr
   if (!parsed.success) return { ok: false, error: zodError(parsed.error) };
   const d = parsed.data;
   const supabase = await createClient();
+  const jar = await cookies();
+  const invite = jar.get(INVITE_COOKIE)?.value ?? null;
   const { data, error } = await supabase.rpc("save_alumni_profile", {
     p_full_name: d.fullName,
     p_grad_year: d.gradYear,
@@ -100,10 +104,29 @@ export async function saveAlumniProfile(input: z.input<typeof alumniSchema>): Pr
     p_advice_areas: d.adviceAreas,
     p_bio: d.bio,
     p_visible: d.visible,
+    p_invite: invite,
   });
   if (error) return { ok: false, error: friendly(error) };
+  if (invite) jar.delete(INVITE_COOKIE);
   revalidatePath("/", "layout");
   return { ok: true, data: { status: String(data) } };
+}
+
+const slotSetupSchema = z.object({
+  meetingLink: z.preprocess(withHttps, z.union([z.literal(""), link("Your meeting link")])),
+  skills: z.array(z.string().trim().min(1).max(40)).min(1, "Add at least one skill.").max(20),
+});
+
+/** The two things a mentor needs before opening slots. */
+export async function saveSlotSetup(input: z.input<typeof slotSetupSchema>): Promise<ActionResult> {
+  const parsed = slotSetupSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: zodError(parsed.error) };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("save_slot_setup", { p_meeting_link: parsed.data.meetingLink, p_skills: parsed.data.skills });
+  if (error) return { ok: false, error: friendly(error) };
+  revalidatePath("/availability");
+  revalidatePath("/profile");
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------- slots
@@ -216,6 +239,46 @@ export async function adminSetStatus(userId: string, status: "approved" | "rejec
   const { error } = await supabase.rpc("admin_set_status", { p_user: userId, p_status: status });
   if (error) return { ok: false, error: friendly(error) };
   if (status === "approved") after(() => sendApprovalEmail(userId).catch((e) => console.error("approval email", e)));
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------- invites (organizers)
+export async function adminAddInvites(raw: string, note: string): Promise<ActionResult<{ added: number; invalid: string[] }>> {
+  const parts = raw.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const valid = parts.filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+  const invalid = parts.filter((x) => !valid.includes(x));
+  if (!valid.length) return { ok: false, error: "Paste one or more email addresses." };
+  if (valid.length > 200) return { ok: false, error: "Add up to 200 emails at a time." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_add_invites", { p_emails: valid, p_note: note.trim().slice(0, 200) });
+  if (error) return { ok: false, error: friendly(error) };
+  revalidatePath("/admin");
+  return { ok: true, data: { added: Number(data) || 0, invalid } };
+}
+
+export async function adminRemoveInvite(email: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_remove_invite", { p_email: email });
+  if (error) return { ok: false, error: friendly(error) };
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+export async function adminCreateInviteLink(label: string, days: number, maxUses: number): Promise<ActionResult<{ code: string }>> {
+  if (!Number.isInteger(days) || days < 1 || days > 90) return { ok: false, error: "Links can last 1 to 90 days." };
+  if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 1000) return { ok: false, error: "Allow between 1 and 1000 sign-ups." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_create_invite_link", { p_label: label.trim().slice(0, 120), p_days: days, p_max_uses: maxUses });
+  if (error) return { ok: false, error: friendly(error) };
+  revalidatePath("/admin");
+  return { ok: true, data: { code: String(data) } };
+}
+
+export async function adminRevokeInviteLink(code: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_revoke_invite_link", { p_code: code });
+  if (error) return { ok: false, error: friendly(error) };
   revalidatePath("/admin");
   return { ok: true };
 }

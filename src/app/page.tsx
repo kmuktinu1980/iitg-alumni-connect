@@ -48,8 +48,8 @@ export default async function Landing() {
         <div className="panel">
           <h2 className="text-lg font-bold">For alumni</h2>
           <p className="text-[0.92rem] text-muted">
-            Sign in with any email and fill your profile from LinkedIn in seconds. An organizer checks it before students can see it,
-            usually within a day.
+            Sign in with any email, describe yourself in a few lines, and we fill in your profile. Invited mentors can open slots
+            straight away; otherwise an organizer checks your profile first, usually within a day.
           </p>
         </div>
       </section>

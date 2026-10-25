@@ -93,4 +93,7 @@ export async function cleanUp() {
   const admin = service();
   for (const id of created.splice(0)) await admin.auth.admin.deleteUser(id).catch(() => {});
   if (allowlisted.length) await admin.from("student_email_allowlist").delete().in("email", allowlisted.splice(0));
+  // Invites made by this run are tagged with the run id.
+  await admin.from("alumni_invites").delete().ilike("email", `%${RUN}%`);
+  await admin.from("invite_links").delete().ilike("label", `${RUN}%`);
 }

@@ -80,6 +80,58 @@ describe.skipIf(!configured)(`API steel threads (run ${RUN})`, () => {
     });
   });
 
+  describe("1b. Quick mentor sign-up and invites", () => {
+    const quick = (p: Person, invite: string | null = null) =>
+      rpc<string>(p, "save_alumni_profile", {
+        p_full_name: "Quick Mentor", p_grad_year: 2008, p_degree: "B.Tech", p_branch: "ME",
+        p_job_title: "Product Lead", p_organization: "Google", p_city: "", p_timezone: "Asia/Kolkata",
+        p_linkedin_url: "https://www.linkedin.com/in/x", p_meeting_link: "", p_skills: [],
+        p_advice_areas: ["Product management"], p_bio: "", p_visible: true, p_invite: invite,
+      });
+
+    test("signing in by typing the emailed code works (no link needed)", async () => {
+      const m = await newPerson("otp", "example.com");
+      // generateLink returns the same 6-digit code the sign-in email shows as {{ .Token }}.
+      const { data, error } = await service().auth.admin.generateLink({ type: "magiclink", email: m.email });
+      expect(error).toBeNull();
+      const otp = data.properties?.email_otp ?? "";
+      expect(otp).toMatch(/^\d{6,10}$/);
+      const fresh = (await import("@supabase/supabase-js")).createClient(
+        process.env.TEST_SUPABASE_URL!, process.env.TEST_SUPABASE_ANON_KEY!, { auth: { persistSession: false } },
+      );
+      const v = await fresh.auth.verifyOtp({ email: m.email, token: otp, type: "email" });
+      expect(v.error).toBeNull();
+      expect(v.data.user?.id).toBe(m.id);
+    });
+
+    test("a pre-approved email skips review; meeting link and skills are asked before the first slot", async () => {
+      const m = await newPerson("invited", "example.com");
+      await rpc(organizer, "admin_add_invites", { p_emails: [m.email.toUpperCase()], p_note: RUN });
+      expect(await quick(m)).toBe("approved");
+      expect(await rpc<string[]>(m, "slot_setup_missing")).toEqual(["meeting_link", "skills"]);
+      expect(await rpcRefused(m, "add_slots", { p_starts: [inHours(72).toISOString()], p_duration: 30 })).toMatch(/meeting link/);
+      await rpc(m, "save_slot_setup", { p_meeting_link: MEET, p_skills: ["Android"] });
+      expect(await rpc<number>(m, "add_slots", { p_starts: [inHours(72).toISOString()], p_duration: 30 })).toBe(1);
+    });
+
+    test("an invite link approves up to its limit; anonymous visitors can check it", async () => {
+      const code = await rpc<string>(organizer, "admin_create_invite_link", { p_label: `${RUN} Sail`, p_days: 7, p_max_uses: 1 });
+      const anon = (await import("@supabase/supabase-js")).createClient(
+        process.env.TEST_SUPABASE_URL!, process.env.TEST_SUPABASE_ANON_KEY!, { auth: { persistSession: false } },
+      );
+      expect((await anon.rpc("invite_link_ok", { p_code: code })).data).toBe(true);
+      expect(await quick(await newPerson("linked1"), code)).toBe("approved");
+      expect(await quick(await newPerson("linked2"), code)).toBe("pending");
+      expect((await anon.rpc("invite_link_ok", { p_code: code })).data).toBe(false);
+    });
+
+    test("only organizers can create invites", async () => {
+      expect(await rpcRefused(alum, "admin_create_invite_link", { p_label: RUN, p_days: 7, p_max_uses: 5 })).toMatch(/Organizers/);
+      expect(await rpcRefused(alum, "admin_add_invites", { p_emails: [`x${RUN}@example.com`] })).toMatch(/Organizers/);
+      expect((await alum.client.from("invite_links").select("code")).error?.message).toMatch(/permission denied/);
+    });
+  });
+
   // ----------------------------------------------------------------- 2
   describe("2. Student sign-up", () => {
     test("an @iitg.ac.in email becomes an approved student straight away", async () => {

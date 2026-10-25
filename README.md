@@ -10,8 +10,8 @@ A mentoring site for IIT Guwahati. Alumni volunteer their skills and open slots 
 
 | Who | Signs in with | Gets in |
 |---|---|---|
-| Students | A 6-digit code emailed to their `@iitg.ac.in` address | Immediately (the domain is the proof) |
-| Alumni | A 6-digit code emailed to any address; profile auto-filled from a few lines they type or dictate, or their LinkedIn PDF | Immediately if invited (pre-approved email or invite link), otherwise after an organizer approves them |
+| Students | Email link to their `@iitg.ac.in` address | Immediately (the domain is the proof) |
+| Alumni | Email link to any address; profile auto-filled from a few lines they type or dictate, or their LinkedIn PDF | Immediately if invited (pre-approved email or invite link), otherwise after an organizer approves them |
 | Organizers | Any of the above, then marked admin in the database | Organizer page |
 
 - **Alumni** describe themselves in a few lines (guided prompts and an example; phone dictation works) or upload their LinkedIn PDF, and Claude fills in batch, branch, role, skills, advice areas and a bio, plus up to three follow-up questions for anything missing. Only the essentials are needed to sign up; the meeting link (Zoom/Meet) and skills are asked for before their first slot. Then they open 30/45/60-minute slots, one-off or weekly.
@@ -51,14 +51,9 @@ All writes go through `SECURITY DEFINER` database functions that check who is ca
    - Site URL: your production URL, e.g. `https://iitg-alumni-connect.vercel.app`
    - Redirect URLs: add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`
 4. **Authentication → Sign In / Providers → Email:** enabled (the default). Everyone signs in with an emailed link; no Google or LinkedIn app setup is needed.
-   - **Required for sign-in codes:** under **Authentication → Emails → Templates**, set both **Confirm signup** and **Magic Link** to show the code and a backup link:
-     ```html
-     <h2>Your IITG Alumni Connect sign-in code</h2>
-     <p style="font-size:28px;font-weight:bold;letter-spacing:4px">{{ .Token }}</p>
-     <p>Type this code on the sign-in page. It expires in an hour.</p>
-     <p>Or, on the same device, <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email">tap here to sign in</a>.</p>
-     ```
-     The site asks people to type the code, which works on phones where the email app opens links in a different browser.
+   - **Recommended, for links opened on phones:** under **Authentication → Emails → Templates** (needs custom SMTP), edit both **Confirm signup** and **Magic Link** so the link is
+     `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email`
+     The default link only works in the same browser that requested it, which fails when someone opens the email in their mail app.
 5. **Authentication → Emails → SMTP Settings:** turn on custom SMTP with your Resend credentials (step 2). Supabase's built-in sender is rate-limited to a handful of emails per hour, which isn't enough for real sign-ins.
 6. **Project Settings → API:** copy the project URL, the `anon` key and the `service_role` key.
 
@@ -115,11 +110,11 @@ Reload the site and the **Organizer** tab appears. New alumni wait there for app
 | Command | What it covers | Needs |
 |---|---|---|
 | `npm run test:db` | Booking, privacy, analytics and invite rules in an in-memory Postgres (49 tests) | Nothing |
-| `npm run test:api` | The five steel threads over the real Supabase API, as real signed-in users (28 tests) | A Supabase API to point at |
+| `npm run test:api` | The five steel threads over the real Supabase API, as real signed-in users (27 tests) | A Supabase API to point at |
 
 **The API steel threads** (`tests/api/steel-threads.test.ts`):
 
-1. **Alumni registration:** sign up → profile → pending → only an organizer can approve → listed for students. Also: signing in with the emailed code; pre-approved emails and invite links skip review (links stop at their limit); meeting link and skills required before the first slot.
+1. **Alumni registration:** sign up → profile → pending → only an organizer can approve → listed for students. Also: pre-approved emails and invite links skip review (links stop at their limit); meeting link and skills required before the first slot.
 2. **Student sign-up:** `@iitg.ac.in` approved instantly; other emails refused; allow-listed emails accepted; students never see emails or meeting links.
 3. **Student booking:** slots inside 48 hours skipped; one-line briefs refused; one booking per slot; one upcoming session per mentor; alumni can't book.
 4. **Calendars:** the session appears for both people and nobody else; the mentor sees the project brief; the calendar invite and Google Calendar link have the right time, people and meeting link; cancelling removes it and reopens the slot.

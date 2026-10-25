@@ -89,21 +89,6 @@ describe.skipIf(!configured)(`API steel threads (run ${RUN})`, () => {
         p_advice_areas: ["Product management"], p_bio: "", p_visible: true, p_invite: invite,
       });
 
-    test("signing in by typing the emailed code works (no link needed)", async () => {
-      const m = await newPerson("otp", "example.com");
-      // generateLink returns the same 6-digit code the sign-in email shows as {{ .Token }}.
-      const { data, error } = await service().auth.admin.generateLink({ type: "magiclink", email: m.email });
-      expect(error).toBeNull();
-      const otp = data.properties?.email_otp ?? "";
-      expect(otp).toMatch(/^\d{6,10}$/);
-      const fresh = (await import("@supabase/supabase-js")).createClient(
-        process.env.TEST_SUPABASE_URL!, process.env.TEST_SUPABASE_ANON_KEY!, { auth: { persistSession: false } },
-      );
-      const v = await fresh.auth.verifyOtp({ email: m.email, token: otp, type: "email" });
-      expect(v.error).toBeNull();
-      expect(v.data.user?.id).toBe(m.id);
-    });
-
     test("a pre-approved email skips review; meeting link and skills are asked before the first slot", async () => {
       const m = await newPerson("invited", "example.com");
       await rpc(organizer, "admin_add_invites", { p_emails: [m.email.toUpperCase()], p_note: RUN });
